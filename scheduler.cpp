@@ -10,11 +10,16 @@ uint32_t lastCpsNotify  = 0;
 uint32_t lastCscNotify  = 0;
 uint32_t lastSuitoCheck = 0;
 
+// Stale flag
+static bool isStale = false;
+
 void schedulerInit() {
-    lastFtmsNotify = millis();
-    lastCpsNotify  = millis();
-    lastCscNotify  = millis();
-    lastSuitoCheck = millis();
+    uint32_t now = millis();
+    lastFtmsNotify = now;
+    lastCpsNotify  = now;
+    lastCscNotify  = now;
+    lastSuitoCheck = now;
+    isStale        = false;
 }
 
 void schedulerLoop() {
@@ -25,41 +30,52 @@ void schedulerLoop() {
     // ───────────────────────────────────────────────
     bleCentralLoop();
 
-    // Stale data védelem (ha 500 ms óta nincs friss adat)
+    // Stale data védelem
     if (now - g_trainerData.timestamp > 500) {
-        g_trainerData.power   = 0;
-        g_trainerData.cadence = 0;
-        g_trainerData.speed   = 0.0f;
+        if (!isStale) {
+            g_trainerData.power   = 0;
+            g_trainerData.cadence = 0;
+            g_trainerData.speed   = 0.0f;
+            isStale = true;
+        }
+    } else {
+        isStale = false;
     }
 
     // ───────────────────────────────────────────────
-    // 2. Zwift notify (FTMS) – magas prioritás
+    // 2. Zwift FTMS notify – magas prioritás
     // ───────────────────────────────────────────────
-    if (now - lastFtmsNotify >= 50) {   // 20–50 ms ideális
-        blePeripheralSendFtms();        // FTMS notify Zwiftnek
+    if (now - lastFtmsNotify >= 50) {
+        if (isFtmsClientConnected()) {
+            blePeripheralSendFtms();
+        }
         lastFtmsNotify = now;
     }
 
     // ───────────────────────────────────────────────
-    // 3. Garmin CPS notify – ritkított
+    // 3. Garmin CPS notify – 1 Hz
     // ───────────────────────────────────────────────
-    if (now - lastCpsNotify >= 300) {
-        blePeripheralSendCps();         // Power Measurement
+    if (now - lastCpsNotify >= 1000) {
+        if (isCpsClientConnected()) {
+            blePeripheralSendCps();
+        }
         lastCpsNotify = now;
     }
 
     // ───────────────────────────────────────────────
-    // 4. Telefon CSC notify – ritkított
+    // 4. Telefon CSC notify – 1 Hz
     // ───────────────────────────────────────────────
-    if (now - lastCscNotify >= 300) {
-        blePeripheralSendCsc();         // Speed/Cadence
+    if (now - lastCscNotify >= 1000) {
+        if (isCscClientConnected()) {
+            blePeripheralSendCsc();
+        }
         lastCscNotify = now;
     }
 
     // ───────────────────────────────────────────────
-    // 5. Suito reconnect-logika
+    // 5. Suito reconnect – 2 másodpercenként
     // ───────────────────────────────────────────────
-    if (now - lastSuitoCheck >= 2000) {   // 2 másodpercenként
+    if (now - lastSuitoCheck >= 2000) {
         lastSuitoCheck = now;
 
         if (!bleCentralIsConnected()) {
