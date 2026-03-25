@@ -20,6 +20,18 @@ bool blePeripheralInit() {
     return true;
 }
 
+bool isFtmsClientConnected() {
+    return ftmsDataChar && ftmsDataChar->getSubscribedCount() > 0;
+}
+
+bool isCpsClientConnected() {
+    return cpsPowerChar && cpsPowerChar->getSubscribedCount() > 0;
+}
+
+bool isCscClientConnected() {
+    return cscMeasureChar && cscMeasureChar->getSubscribedCount() > 0;
+}
+
 void blePeripheralStartAdvertising() {
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
     adv->addServiceUUID("1826"); // FTMS
