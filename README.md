@@ -98,6 +98,12 @@ ESP32‑C6 (Peripheral):
 
 ---
 
+Suito → FTMS notify → parser → TrainerData → scheduler → notify → Zwift/Garmin/Telefon
+HRM → HRS notify → TrainerData
+Cadence sensor → CSC notify → TrainerData
+
+---
+
 ## 📡 Kapcsolatkezelés és időzítés
 
 A BLE időosztásos működésű, ezért a bridge explicit schedulert használ:
