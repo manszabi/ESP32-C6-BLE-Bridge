@@ -87,6 +87,17 @@ Az ESP32‑C6 bridge ezt oldja meg:
 
 ---
 
+Suito (FTMS) ─┐
+HRM (HRS) ─────┤── ESP32‑C6 (Central)
+Cadence (CSC) ─┘
+
+ESP32‑C6 (Peripheral):
+  ├─ FTMS → Zwift
+  ├─ CPS  → Garmin
+  └─ CSC  → Telefon
+
+---
+
 ## 📡 Kapcsolatkezelés és időzítés
 
 A BLE időosztásos működésű, ezért a bridge explicit schedulert használ:
