@@ -3,6 +3,10 @@
 #include <Arduino.h>
 
 bool blePeripheralInit();
+bool isFtmsClientConnected();
+bool isCpsClientConnected();
+bool isCscClientConnected();
+
 void blePeripheralStartAdvertising();
 void blePeripheralLoop();
 
