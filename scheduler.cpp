@@ -31,7 +31,7 @@ void schedulerLoop() {
     bleCentralCadenceLoop();   // Cadence szenzor
 
     // 2. Stale védelem – Suito adat
-    if (now - g_trainerData.timestamp > 500) {
+    if (now - g_trainerData.timestamp > 1500) {
         if (!isStale) {
             g_trainerData.power   = 0;
             g_trainerData.speed   = 0.0f;
@@ -46,7 +46,7 @@ void schedulerLoop() {
     refreshDerivedFields();
 
     // 4. FTMS → Zwift (50 ms)
-    if (now - lastFtmsNotify >= 50) {
+    if (now - lastFtmsNotify >= 200) {
         if (isFtmsClientConnected()) {
             blePeripheralSendFtms();
         }
