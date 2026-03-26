@@ -104,8 +104,14 @@ bool bleCentralHrmConnect() {
         }
     }
 
-    // Csatlakozás
-    hrmClient = NimBLEDevice::createClient();
+    // Csatlakozás - klienst csak egyszer hozzuk létre
+    if (!hrmClient) {
+        hrmClient = NimBLEDevice::createClient();
+        if (!hrmClient) {
+            Serial.println("Failed to create BLE client for HRM!");
+            return false;
+        }
+    }
 
     Serial.println("Connecting to HRM sensor...");
     if (!hrmClient->connect(*hrmAddress)) {
