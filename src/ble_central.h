@@ -12,4 +12,4 @@ bool isFtmsClientConnected();
 bool isCpsClientConnected();
 bool isCscClientConnected();
 
-void handleControlFromClient(int targetPower);
+void sendResistanceCommandToSuito(int targetPower);

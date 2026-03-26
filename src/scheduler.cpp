@@ -116,7 +116,7 @@ void schedulerLoop() {
             // Debug információ (nem túl gyakran)
             if (reconnectFailCount % 3 == 0 && reconnectFailCount > 0) {
                 Serial.printf("Suito reconnect attempt #%d, interval = %d ms\n", 
-                              reconnectFailCount, reconnectInterval);
+                            reconnectFailCount, reconnectInterval);
             }
         } 
         else {

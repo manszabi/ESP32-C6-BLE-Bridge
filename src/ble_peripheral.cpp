@@ -4,7 +4,6 @@
 #include "config.h"
 
 #include <NimBLEDevice.h>
-#include <freertos/timers.h>        // FreeRTOS timerhez
 
 // ───────────────────────────────────────────────
 // BLE server + service/characteristic pointerek
@@ -42,11 +41,15 @@ static uint16_t lastWheelEventTime  = 0;   // 1/1024 sec egységben
 static uint32_t lastCrankUpdateMs = 0;
 static uint32_t lastWheelUpdateMs = 0;
 
+// Forward deklarációk
+static void updateCrankCounter();
+static void updateWheelCounter();
+
 // ───────────────────────────────────────────────
 // FreeRTOS Timer a counter-ek periodikus frissítéséhez
 // ───────────────────────────────────────────────
 static TimerHandle_t counterUpdateTimer = nullptr;
-static const uint32_t COUNTER_UPDATE_PERIOD_MS = 150;   // 100-200 ms ajánlott tartomány
+static const uint32_t COUNTER_UPDATE_PERIOD_MS = 150;
 
 // ───────────────────────────────────────────────
 // Kliens-ellenőrzés
@@ -79,8 +82,6 @@ class FtmsControlPointCallback : public NimBLECharacteristicCallbacks {
         if (opcode == 0x05 && val.size() >= 3) {
             int16_t targetPower = (int16_t)(d[1] | (d[2] << 8));
             handleControlFromClient(targetPower);
-
-            // TODO: Response Code indication küldése (0x80 opcode)
         }
         // TODO: 0x11 Indoor Bike Simulation Parameters kezelése
     }
@@ -88,10 +89,12 @@ class FtmsControlPointCallback : public NimBLECharacteristicCallbacks {
 
 // ───────────────────────────────────────────────
 // Timer callback – periodikus counter frissítés
+// FIGYELEM: FreeRTOS daemon task kontextusban fut,
+// ezért a send függvények NEM hívják a countereket,
+// hogy elkerüljük a race conditiont.
 // ───────────────────────────────────────────────
 static void counterUpdateTimerCallback(TimerHandle_t xTimer) {
-    (void)xTimer;  // nem használjuk
-
+    (void)xTimer;
     updateCrankCounter();
     updateWheelCounter();
 }
@@ -109,26 +112,21 @@ bool blePeripheralInit() {
     // ─────────────────────────────────────────
     ftmsService = bleServer->createService("1826");
 
-    // Fitness Machine Feature (0x2ACC, read)
     ftmsFeatureChar = ftmsService->createCharacteristic(
         "2ACC",
         NIMBLE_PROPERTY::READ
     );
-
     // Bit 1: Cadence Supported, Bit 6: Power Measurement Supported
-    // Bit 2 (Total Distance) szándékosan kikapcsolva, mert nem küldjük
     uint8_t ftmsFeature[8] = {0};
     ftmsFeature[0] = 0x42;  // 0b01000010 → cadence + power
     ftmsFeature[5] = 0x40;  // Bit 14: Indoor Bike Simulation Parameters Supported
     ftmsFeatureChar->setValue(ftmsFeature, sizeof(ftmsFeature));
 
-    // Indoor Bike Data (0x2AD2, notify)
     ftmsDataChar = ftmsService->createCharacteristic(
         "2AD2",
         NIMBLE_PROPERTY::NOTIFY
     );
 
-    // Fitness Machine Control Point (0x2AD9, write + indicate)
     ftmsControlPointChar = ftmsService->createCharacteristic(
         "2AD9",
         NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::INDICATE
@@ -164,12 +162,12 @@ bool blePeripheralInit() {
     cscMeasureChar = cscService->createCharacteristic("2A5B", NIMBLE_PROPERTY::NOTIFY);
 
     // ─────────────────────────────────────────
-    // FreeRTOS Timer a counter-ek periodikus frissítéséhez
+    // FreeRTOS Timer
     // ─────────────────────────────────────────
     counterUpdateTimer = xTimerCreate(
         "CounterUpdateTimer",
         pdMS_TO_TICKS(COUNTER_UPDATE_PERIOD_MS),
-        pdTRUE,                                   // auto-reload
+        pdTRUE,
         nullptr,
         counterUpdateTimerCallback
     );
@@ -194,9 +192,9 @@ bool blePeripheralInit() {
 void blePeripheralStartAdvertising() {
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
 
-    adv->addServiceUUID("1826");  // FTMS
-    adv->addServiceUUID("1818");  // CPS
-    adv->addServiceUUID("1816");  // CSC
+    adv->addServiceUUID("1826");
+    adv->addServiceUUID("1818");
+    adv->addServiceUUID("1816");
 
     adv->start();
     Serial.println("BLE advertising started.");
@@ -204,6 +202,7 @@ void blePeripheralStartAdvertising() {
 
 // ───────────────────────────────────────────────
 // Crank counter frissítése (CPS + CSC-hez)
+// Csak a FreeRTOS timer hívja!
 // ───────────────────────────────────────────────
 static void updateCrankCounter() {
     uint32_t now = millis();
@@ -231,6 +230,7 @@ static void updateCrankCounter() {
 
 // ───────────────────────────────────────────────
 // Wheel counter frissítése (CSC-hez)
+// Csak a FreeRTOS timer hívja!
 // ───────────────────────────────────────────────
 static void updateWheelCounter() {
     uint32_t now = millis();
@@ -259,6 +259,11 @@ static void updateWheelCounter() {
 
 // ───────────────────────────────────────────────
 // FTMS Indoor Bike Data notify (Zwift)
+//
+// Flags: bit0=0 (Speed present), bit2=1 (Cadence), bit6=1 (Power)
+// flags = 0x0044
+// FONTOS: bit0 invertált! 0 = speed jelen van
+//         bit1 NINCS beállítva, mert Average Speed-et nem küldünk
 // ───────────────────────────────────────────────
 void blePeripheralSendFtms() {
     if (!ftmsDataChar) return;
@@ -266,9 +271,8 @@ void blePeripheralSendFtms() {
     uint8_t frame[8] = {0};
     size_t offset = 0;
 
-    // Flags: bit1 (Speed) + bit2 (Cadence) + bit6 (Power)
-    uint16_t flags = 0x0046;
-
+    // Flags: 0x0044 = bit2 (Cadence) + bit6 (Power), bit0=0 (Speed present)
+    uint16_t flags = 0x0044;
     frame[offset++] = flags & 0xFF;
     frame[offset++] = (flags >> 8) & 0xFF;
 
@@ -282,7 +286,7 @@ void blePeripheralSendFtms() {
     frame[offset++] = rawCadence & 0xFF;
     frame[offset++] = (rawCadence >> 8) & 0xFF;
 
-    // Instantaneous Power (sint16)
+    // Instantaneous Power (sint16, watts)
     int16_t rawPower = (int16_t)g_trainerData.power;
     frame[offset++] = rawPower & 0xFF;
     frame[offset++] = (rawPower >> 8) & 0xFF;
@@ -293,17 +297,16 @@ void blePeripheralSendFtms() {
 
 // ───────────────────────────────────────────────
 // CPS Cycling Power Measurement notify (Garmin)
+// Counter-eket a FreeRTOS timer frissíti,
+// itt csak olvassuk őket.
 // ───────────────────────────────────────────────
 void blePeripheralSendCps() {
     if (!cpsPowerChar) return;
 
-    updateCrankCounter();        // biztosíték
-
     uint8_t frame[8] = {0};
     size_t offset = 0;
 
-    uint16_t flags = 0x0020;     // Crank Revolution Data present
-
+    uint16_t flags = 0x0020;  // Crank Revolution Data present
     frame[offset++] = flags & 0xFF;
     frame[offset++] = (flags >> 8) & 0xFF;
 
@@ -323,35 +326,29 @@ void blePeripheralSendCps() {
 
 // ───────────────────────────────────────────────
 // CSC Measurement notify (Telefon)
+// Counter-eket a FreeRTOS timer frissíti,
+// itt csak olvassuk őket.
 // ───────────────────────────────────────────────
 void blePeripheralSendCsc() {
     if (!cscMeasureChar) return;
 
-    updateWheelCounter();
-    updateCrankCounter();
-
     uint8_t frame[11] = {0};
     size_t offset = 0;
 
-    uint8_t flags = 0x03;        // Wheel + Crank data present
-
+    uint8_t flags = 0x03;  // Wheel + Crank data present
     frame[offset++] = flags;
 
-    // Cumulative Wheel Revolutions (uint32)
     frame[offset++] = cumulativeWheelRevs & 0xFF;
     frame[offset++] = (cumulativeWheelRevs >> 8) & 0xFF;
     frame[offset++] = (cumulativeWheelRevs >> 16) & 0xFF;
     frame[offset++] = (cumulativeWheelRevs >> 24) & 0xFF;
 
-    // Last Wheel Event Time
     frame[offset++] = lastWheelEventTime & 0xFF;
     frame[offset++] = (lastWheelEventTime >> 8) & 0xFF;
 
-    // Cumulative Crank Revolutions
     frame[offset++] = cumulativeCrankRevs & 0xFF;
     frame[offset++] = (cumulativeCrankRevs >> 8) & 0xFF;
 
-    // Last Crank Event Time
     frame[offset++] = lastCrankEventTime & 0xFF;
     frame[offset++] = (lastCrankEventTime >> 8) & 0xFF;
 
