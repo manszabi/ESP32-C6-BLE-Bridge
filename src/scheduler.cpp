@@ -4,6 +4,7 @@
 #include "ble_central_hrm.h"
 #include "ble_central_cadence.h"
 #include "ble_peripheral.h"
+#include "ble_scan.h"
 #include "config.h"
 #include <Arduino.h>
 
@@ -97,30 +98,34 @@ void schedulerLoop() {
     if (now - lastSuitoCheck >= reconnectInterval) {
         lastSuitoCheck = now;
 
+        // Unified scan: ha nincs meg valamelyik eszköz és nem fut scan, indítsunk
+        ScanResults sr = bleScanGetResults();
+        bool needScan = !sr.ftmsFound || !sr.hrmFound || !sr.cadenceFound;
+        if (needScan && !bleScanIsRunning()) {
+            bleScanStart();
+        }
+
+        // Suito reconnect
         bool currentlyConnected = bleCentralIsConnected();
 
         if (!currentlyConnected) {
-            // Reconnect próbálkozás a Suitóhoz
             bleCentralConnectToSuito();
             reconnectFailCount++;
 
-            // Exponential backoff: minél többször hibázik, annál ritkábban próbálkozik
             if (reconnectFailCount > 5) {
-                reconnectInterval = 3500;      // maximum 3.5 másodperc
+                reconnectInterval = 3500;
             } else if (reconnectFailCount > 2) {
                 reconnectInterval = 2000;
             } else {
-                reconnectInterval = 750;       // gyors próbálkozás
+                reconnectInterval = 750;
             }
 
-            // Debug információ (nem túl gyakran)
             if (reconnectFailCount % 3 == 0 && reconnectFailCount > 0) {
-                Serial.printf("Suito reconnect attempt #%d, interval = %d ms\n", 
+                Serial.printf("Suito reconnect attempt #%d, interval = %d ms\n",
                             reconnectFailCount, reconnectInterval);
             }
-        } 
+        }
         else {
-            // Kapcsolat rendben van
             if (reconnectFailCount > 0) {
                 reconnectFailCount = 0;
                 reconnectInterval = 1500;
@@ -128,7 +133,7 @@ void schedulerLoop() {
             }
         }
 
-        // Egyéb central eszközök reconnect-je (egyszerűbb logika)
+        // HRM és Cadence connect (csak ha a scanner már megtalálta őket)
         if (!bleCentralHrmIsConnected())      bleCentralHrmConnect();
         if (!bleCentralCadenceIsConnected())  bleCentralCadenceConnect();
     }
