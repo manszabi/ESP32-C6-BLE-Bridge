@@ -143,4 +143,15 @@ void schedulerLoop() {
         }
         lastCscNotify = now;
     }
+
+        // ======================
+    // Segédfüggvények
+    // ======================
+    bool isSchedulerStale() {
+        return isStale;
+    }
+    
+    uint32_t getReconnectInterval() {
+        return reconnectInterval;
+    }
 }
