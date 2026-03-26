@@ -104,7 +104,7 @@ static void counterUpdateTimerCallback(TimerHandle_t xTimer) {
 // ───────────────────────────────────────────────
 
 bool blePeripheralInit() {
-    NimBLEDevice::init(BRIDGE_DEVICE_NAME);
+    // NimBLEDevice::init() már megtörtént bleCentralInit()-ben
     bleServer = NimBLEDevice::createServer();
 
     // ─────────────────────────────────────────
@@ -160,6 +160,13 @@ bool blePeripheralInit() {
     cscFeatureChar->setValue(cscFeature, sizeof(cscFeature));
 
     cscMeasureChar = cscService->createCharacteristic("2A5B", NIMBLE_PROPERTY::NOTIFY);
+
+    // ─────────────────────────────────────────
+    // Service-ek indítása (NimBLE 2.x: kötelező advertising előtt)
+    // ─────────────────────────────────────────
+    ftmsService->start();
+    cpsService->start();
+    cscService->start();
 
     // ─────────────────────────────────────────
     // FreeRTOS Timer

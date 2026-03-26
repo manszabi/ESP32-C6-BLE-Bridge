@@ -14,7 +14,7 @@ static void onFtmsNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t le
 }
 
 bool bleCentralInit() {
-    NimBLEDevice::init("ESP32C6-Bridge-Central");
+    NimBLEDevice::init(BRIDGE_DEVICE_NAME);
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
     return true;
 }
@@ -24,7 +24,14 @@ bool bleCentralConnectToSuito() {
         return true;
     }
 
-    suitoClient = NimBLEDevice::createClient();
+    // Csak egyszer hozunk létre klienst, utána újrahasználjuk
+    if (!suitoClient) {
+        suitoClient = NimBLEDevice::createClient();
+        if (!suitoClient) {
+            Serial.println("Failed to create BLE client for Suito!");
+            return false;
+        }
+    }
 
     Serial.println("Connecting to Suito...");
     if (!suitoClient->connect(SUITO_MAC_ADDRESS)) {

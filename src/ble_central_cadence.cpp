@@ -137,7 +137,14 @@ bool bleCentralCadenceConnect() {
         }
     }
 
-    cadClient = NimBLEDevice::createClient();
+    // Klienst csak egyszer hozzuk létre
+    if (!cadClient) {
+        cadClient = NimBLEDevice::createClient();
+        if (!cadClient) {
+            Serial.println("Failed to create BLE client for Cadence!");
+            return false;
+        }
+    }
 
     Serial.println("Connecting to Cadence sensor...");
     if (!cadClient->connect(*cadAddress)) {
