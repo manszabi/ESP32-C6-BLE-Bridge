@@ -31,7 +31,7 @@ void schedulerLoop() {
     bleCentralCadenceLoop();   // Cadence szenzor
 
     // 2. Stale védelem – Suito adat
-    if (now - g_trainerData.timestamp > 1500) {
+    if (now - g_trainerData.timestamp > 1800) {
         if (!isStale) {
             g_trainerData.power   = 0;
             g_trainerData.speed   = 0.0f;
