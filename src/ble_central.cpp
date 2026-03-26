@@ -1,6 +1,7 @@
 #include "ble_central.h"
 #include "config.h"
 #include "ftms_parser.h"
+#include "ble_scan.h"
 
 #include <NimBLEDevice.h>
 
@@ -15,8 +16,9 @@
 static NimBLEClient* suitoClient = nullptr;
 static NimBLERemoteCharacteristic* ftmsIndoorBikeDataChar = nullptr;
 static NimBLERemoteCharacteristic* ftmsControlPointChar   = nullptr;
-static NimBLEAddress* suitoAddress = nullptr;
-static bool suitoFound = false;
+
+// Cím a unified scannerből
+extern NimBLEAddress* foundFtmsAddress;
 
 // ───────────────────────────────────────────────
 // Indoor Bike Data notify callback
@@ -27,39 +29,17 @@ static void onFtmsNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t le
 }
 
 // ───────────────────────────────────────────────
-// Scan callback — FTMS trainer keresése
-// ───────────────────────────────────────────────
-
-class SuitoScanCallback : public NimBLEScanCallbacks {
-    void onResult(const NimBLEAdvertisedDevice* device) override {
-        if (device->isAdvertisingService(NimBLEUUID("1826"))) {
-            Serial.printf("FTMS trainer found: %s (%s)\n",
-                device->getName().c_str(),
-                device->getAddress().toString().c_str());
-
-            suitoAddress = new NimBLEAddress(device->getAddress());
-            suitoFound = true;
-
-            NimBLEDevice::getScan()->stop();
-        }
-    }
-};
-
-static SuitoScanCallback suitoScanCb;
-
-// ───────────────────────────────────────────────
 // Init
 // ───────────────────────────────────────────────
 
 bool bleCentralInit() {
     NimBLEDevice::init(BRIDGE_DEVICE_NAME);
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
-    suitoFound = false;
     return true;
 }
 
 // ───────────────────────────────────────────────
-// Connect — scan + csatlakozás
+// Connect — unified scanner-ből kapott címmel
 // ───────────────────────────────────────────────
 
 bool bleCentralConnectToSuito() {
@@ -67,21 +47,9 @@ bool bleCentralConnectToSuito() {
         return true;
     }
 
-    // Ha még nem találtuk meg a trainert, scan indítása
-    if (!suitoFound) {
-        Serial.println("Scanning for FTMS trainer...");
-
-        NimBLEScan* scan = NimBLEDevice::getScan();
-        scan->setScanCallbacks(&suitoScanCb, false);
-        scan->setActiveScan(true);
-        scan->setInterval(100);
-        scan->setWindow(99);
-        scan->start(BLE_SCAN_DURATION_SEC, false);
-
-        if (!suitoFound) {
-            Serial.println("FTMS trainer not found during scan.");
-            return false;
-        }
+    // Várjuk meg, amíg a unified scanner megtalálja
+    if (!foundFtmsAddress) {
+        return false;
     }
 
     // Klienst csak egyszer hozzuk létre
@@ -94,7 +62,7 @@ bool bleCentralConnectToSuito() {
     }
 
     Serial.println("Connecting to FTMS trainer...");
-    if (!suitoClient->connect(*suitoAddress)) {
+    if (!suitoClient->connect(*foundFtmsAddress)) {
         Serial.println("Failed to connect to FTMS trainer!");
         return false;
     }

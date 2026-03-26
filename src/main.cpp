@@ -4,6 +4,7 @@
 #include "ble_central_hrm.h"
 #include "ble_central_cadence.h"
 #include "ble_peripheral.h"
+#include "ble_scan.h"
 #include "scheduler.h"
 
 void setup() {
@@ -14,18 +15,17 @@ void setup() {
 #endif
 
     // Central oldali init
-    bleCentralInit();         // Suito
-    bleCentralHrmInit();      // HRM
-    bleCentralCadenceInit();  // Cadence
+    bleCentralInit();         // NimBLE init + power
+    bleCentralHrmInit();
+    bleCentralCadenceInit();
 
     // Peripheral oldali init
     blePeripheralInit();
     blePeripheralStartAdvertising();
 
-    // Első connect próbák
-    bleCentralConnectToSuito();
-    bleCentralHrmConnect();
-    bleCentralCadenceConnect();
+    // Unified scanner init + első scan indítása
+    bleScanInit();
+    bleScanStart();
 
     // Scheduler
     schedulerInit();

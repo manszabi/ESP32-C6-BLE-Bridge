@@ -1,6 +1,7 @@
 #include "ble_central_cadence.h"
 #include "data_model.h"
 #include "config.h"
+#include "ble_scan.h"
 
 #include <NimBLEDevice.h>
 
@@ -21,8 +22,9 @@
 
 static NimBLEClient* cadClient = nullptr;
 static NimBLERemoteCharacteristic* cscMeasChar = nullptr;
-static NimBLEAddress* cadAddress = nullptr;
-static bool cadFound = false;
+
+// Cím a unified scannerből
+extern NimBLEAddress* foundCadenceAddress;
 
 // Előző crank értékek a cadence számoláshoz
 static uint16_t prevCrankRevs = 0;
@@ -42,7 +44,6 @@ static void onCscNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t len
     // Bit 0: Wheel Revolution Data present — átlépjük
     if (flags & 0x01) {
         if (offset + 6 > len) return;
-        // uint32 wheel revs + uint16 last wheel event time
         offset += 6;
     }
 
@@ -54,7 +55,6 @@ static void onCscNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t len
         uint16_t crankTime = (uint16_t)(data[offset + 2] | (data[offset + 3] << 8));
 
         if (firstCrankData) {
-            // Első adat: csak eltároljuk, nem számolunk cadence-t
             prevCrankRevs = crankRevs;
             prevCrankTime = crankTime;
             firstCrankData = false;
@@ -67,7 +67,6 @@ static void onCscNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t len
 
         if (deltaTime > 0 && deltaRevs > 0 && deltaRevs < 20) {
             // deltaTime 1/1024 sec egységben
-            // cadence = (deltaRevs / deltaTime) * 60 * 1024
             float cadence = (deltaRevs * 60.0f * 1024.0f) / deltaTime;
 
             if (cadence > 0 && cadence < 250) {
@@ -81,38 +80,16 @@ static void onCscNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t len
 }
 
 // ───────────────────────────────────────────────
-// Scan callback — Cadence szenzor keresése
-// ───────────────────────────────────────────────
-
-class CadenceScanCallback : public NimBLEScanCallbacks {
-    void onResult(const NimBLEAdvertisedDevice* device) override {
-        if (device->isAdvertisingService(NimBLEUUID("1816"))) {
-            Serial.printf("Cadence sensor found: %s (%s)\n",
-                device->getName().c_str(),
-                device->getAddress().toString().c_str());
-
-            cadAddress = new NimBLEAddress(device->getAddress());
-            cadFound = true;
-
-            NimBLEDevice::getScan()->stop();
-        }
-    }
-};
-
-static CadenceScanCallback cadScanCb;
-
-// ───────────────────────────────────────────────
 // Init
 // ───────────────────────────────────────────────
 
 bool bleCentralCadenceInit() {
-    cadFound = false;
     firstCrankData = true;
     return true;
 }
 
 // ───────────────────────────────────────────────
-// Connect — scan + csatlakozás
+// Connect — unified scanner-ből kapott címmel
 // ───────────────────────────────────────────────
 
 bool bleCentralCadenceConnect() {
@@ -120,21 +97,9 @@ bool bleCentralCadenceConnect() {
         return true;
     }
 
-    // Scan a cadence szenzorra
-    if (!cadFound) {
-        Serial.println("Scanning for Cadence sensor...");
-
-        NimBLEScan* scan = NimBLEDevice::getScan();
-        scan->setScanCallbacks(&cadScanCb, false);
-        scan->setActiveScan(true);
-        scan->setInterval(100);
-        scan->setWindow(99);
-        scan->start(BLE_SCAN_DURATION_SEC, false);
-
-        if (!cadFound) {
-            Serial.println("Cadence sensor not found during scan.");
-            return false;
-        }
+    // Várjuk meg, amíg a unified scanner megtalálja
+    if (!foundCadenceAddress) {
+        return false;
     }
 
     // Klienst csak egyszer hozzuk létre
@@ -147,7 +112,7 @@ bool bleCentralCadenceConnect() {
     }
 
     Serial.println("Connecting to Cadence sensor...");
-    if (!cadClient->connect(*cadAddress)) {
+    if (!cadClient->connect(*foundCadenceAddress)) {
         Serial.println("Failed to connect to Cadence sensor!");
         return false;
     }
@@ -186,7 +151,6 @@ bool bleCentralCadenceConnect() {
 // ───────────────────────────────────────────────
 
 void bleCentralCadenceLoop() {
-    // callback-alapú
 }
 
 // ───────────────────────────────────────────────

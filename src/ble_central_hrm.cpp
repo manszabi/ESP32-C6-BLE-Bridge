@@ -1,6 +1,7 @@
 #include "ble_central_hrm.h"
 #include "data_model.h"
 #include "config.h"
+#include "ble_scan.h"
 
 #include <NimBLEDevice.h>
 
@@ -17,8 +18,9 @@
 
 static NimBLEClient* hrmClient = nullptr;
 static NimBLERemoteCharacteristic* hrmMeasChar = nullptr;
-static NimBLEAddress* hrmAddress = nullptr;
-static bool hrmFound = false;
+
+// Cím a unified scannerből
+extern NimBLEAddress* foundHrmAddress;
 
 // ───────────────────────────────────────────────
 // HRM Notify callback
@@ -48,63 +50,28 @@ static void onHrmNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t len
 }
 
 // ───────────────────────────────────────────────
-// Scan callback — HRM szenzor keresése
-// ───────────────────────────────────────────────
-
-class HrmScanCallback : public NimBLEScanCallbacks {
-    void onResult(const NimBLEAdvertisedDevice* device) override {
-        if (device->isAdvertisingService(NimBLEUUID("180D"))) {
-            Serial.printf("HRM sensor found: %s (%s)\n",
-                device->getName().c_str(),
-                device->getAddress().toString().c_str());
-
-            hrmAddress = new NimBLEAddress(device->getAddress());
-            hrmFound = true;
-
-            NimBLEDevice::getScan()->stop();
-        }
-    }
-};
-
-static HrmScanCallback hrmScanCb;
-
-// ───────────────────────────────────────────────
 // Init
 // ───────────────────────────────────────────────
 
 bool bleCentralHrmInit() {
-    hrmFound = false;
     return true;
 }
 
 // ───────────────────────────────────────────────
-// Connect — scan + csatlakozás
+// Connect — unified scanner-ből kapott címmel
 // ───────────────────────────────────────────────
 
 bool bleCentralHrmConnect() {
-    // Ha már csatlakozva van, ne csináljon semmit
     if (hrmClient && hrmClient->isConnected()) {
         return true;
     }
 
-    // Ha még nem találtuk meg a szenzort, scan indítása
-    if (!hrmFound) {
-        Serial.println("Scanning for HRM sensor...");
-
-        NimBLEScan* scan = NimBLEDevice::getScan();
-        scan->setScanCallbacks(&hrmScanCb, false);
-        scan->setActiveScan(true);
-        scan->setInterval(100);
-        scan->setWindow(99);
-        scan->start(BLE_SCAN_DURATION_SEC, false);
-
-        if (!hrmFound) {
-            Serial.println("HRM sensor not found during scan.");
-            return false;
-        }
+    // Várjuk meg, amíg a unified scanner megtalálja
+    if (!foundHrmAddress) {
+        return false;
     }
 
-    // Csatlakozás - klienst csak egyszer hozzuk létre
+    // Klienst csak egyszer hozzuk létre
     if (!hrmClient) {
         hrmClient = NimBLEDevice::createClient();
         if (!hrmClient) {
@@ -114,7 +81,7 @@ bool bleCentralHrmConnect() {
     }
 
     Serial.println("Connecting to HRM sensor...");
-    if (!hrmClient->connect(*hrmAddress)) {
+    if (!hrmClient->connect(*foundHrmAddress)) {
         Serial.println("Failed to connect to HRM sensor!");
         return false;
     }
@@ -155,7 +122,6 @@ bool bleCentralHrmConnect() {
 // ───────────────────────────────────────────────
 
 void bleCentralHrmLoop() {
-    // callback-alapú, a notify automatikusan jön
 }
 
 // ───────────────────────────────────────────────

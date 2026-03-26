@@ -12,10 +12,6 @@ static const char* CONTROL_MASTER_NAME = "ZWIFT";
 static const uint16_t CONNECTION_INTERVAL_MS = 20;
 static const uint16_t NOTIFY_INTERVAL_MS     = 100;
 
-// HRM és Cadence szenzor (opcionális MAC, ha üres, UUID scan-nel keres)
-static const char* HRM_MAC_ADDRESS     = "";   // üres = automatikus scan
-static const char* CADENCE_MAC_ADDRESS = "";   // üres = automatikus scan
-
 // Kerék kerülete (CSC számoláshoz)
 static const float WHEEL_CIRCUMFERENCE_M = 2.105f;  // 700x25c
 
