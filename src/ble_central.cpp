@@ -8,17 +8,14 @@ static NimBLEClient* suitoClient = nullptr;
 static NimBLERemoteCharacteristic* ftmsIndoorBikeDataChar = nullptr;
 static NimBLERemoteCharacteristic* ftmsControlPointChar   = nullptr;
 
-// Indoor Bike Data notify callback
-class FtmsNotifyCallback : public NimBLERemoteCharacteristicCallbacks {
-    void onNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t len, bool isNotify) override {
-        // Itt jönnek a Suito FTMS adatai
-        parseFtmsIndoorBikeData(data, len);
-    }
-};
+// Indoor Bike Data notify callback (NimBLE 2.x: lambda)
+static void onFtmsNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t len, bool isNotify) {
+    parseFtmsIndoorBikeData(data, len);
+}
 
 bool bleCentralInit() {
     NimBLEDevice::init("ESP32C6-Bridge-Central");
-    NimBLEDevice::setPower(ESP_PWR_LVL_P7);
+    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
     return true;
 }
 
@@ -37,29 +34,25 @@ bool bleCentralConnectToSuito() {
 
     Serial.println("Connected to Suito, discovering services...");
 
-    NimBLERemoteService* ftmsService = suitoClient->getService("1826"); // FTMS
+    NimBLERemoteService* ftmsService = suitoClient->getService("1826");
     if (!ftmsService) {
         Serial.println("FTMS service not found on Suito!");
         return false;
     }
 
-    // Indoor Bike Data (0x2AD2)
     ftmsIndoorBikeDataChar = ftmsService->getCharacteristic("2AD2");
     if (!ftmsIndoorBikeDataChar) {
         Serial.println("Indoor Bike Data characteristic not found!");
         return false;
     }
 
-    // Control Point (0x2AD9)
     ftmsControlPointChar = ftmsService->getCharacteristic("2AD9");
     if (!ftmsControlPointChar) {
         Serial.println("Control Point characteristic not found!");
-        // nem kritikus, de jó ha van
     }
 
-    // Feliratkozás notify-ra
     if (ftmsIndoorBikeDataChar->canNotify()) {
-        ftmsIndoorBikeDataChar->subscribe(true, new FtmsNotifyCallback());
+        ftmsIndoorBikeDataChar->subscribe(true, onFtmsNotify);
         Serial.println("Subscribed to Indoor Bike Data notifications.");
     } else {
         Serial.println("Indoor Bike Data characteristic cannot notify!");
@@ -69,8 +62,6 @@ bool bleCentralConnectToSuito() {
 }
 
 void bleCentralLoop() {
-    // NimBLE callback-alapú, itt nem kell sokat csinálni.
-    // Ha akarsz, ellenőrizheted a kapcsolatot, de a reconnect-et a scheduler intézi.
 }
 
 bool bleCentralIsConnected() {
@@ -82,15 +73,8 @@ void sendResistanceCommandToSuito(int targetPower) {
         return;
     }
 
-    // FTMS Control Point frame váz – valós implementáció később
-    // Példa: set target power
-    uint8_t frame[5] = {0};
-
-    // Ez csak illusztráció, a valós FTMS CP parancs formátuma specifikus:
-    // frame[0] = OPCODE_SET_TARGET_POWER;
-    // frame[1..2] = targetPower, stb.
-
-    frame[0] = 0x05; // pl. "set target power" opcode (nem valós érték!)
+    uint8_t frame[3] = {0};
+    frame[0] = 0x05;
     frame[1] = targetPower & 0xFF;
     frame[2] = (targetPower >> 8) & 0xFF;
 

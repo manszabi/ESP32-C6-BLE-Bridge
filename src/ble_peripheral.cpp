@@ -1,4 +1,5 @@
 #include "ble_peripheral.h"
+#include "ble_central.h"
 #include "data_model.h"
 #include "config.h"
 
@@ -25,35 +26,34 @@ static NimBLECharacteristic* cscMeasureChar = nullptr;
 
 
 // ───────────────────────────────────────────────
-// Kliens-ellenőrzés
+// Kliens-ellenőrzés (NimBLE 2.x: getConnectedCount)
 // ───────────────────────────────────────────────
 
 bool isFtmsClientConnected() {
-    return ftmsDataChar && ftmsDataChar->getSubscribedCount() > 0;
+    return bleServer && bleServer->getConnectedCount() > 0 && ftmsDataChar;
 }
 
 bool isCpsClientConnected() {
-    return cpsPowerChar && cpsPowerChar->getSubscribedCount() > 0;
+    return bleServer && bleServer->getConnectedCount() > 0 && cpsPowerChar;
 }
 
 bool isCscClientConnected() {
-    return cscMeasureChar && cscMeasureChar->getSubscribedCount() > 0;
+    return bleServer && bleServer->getConnectedCount() > 0 && cscMeasureChar;
 }
 
 
 // ───────────────────────────────────────────────
 // Zwift → ESP32 → Suito vezérlés (Control Point)
+// NimBLE 2.x: callback class stílus megváltozott
 // ───────────────────────────────────────────────
 
 class FtmsControlPointCallback : public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic* c) override {
-        std::string val = c->getValue();
+    void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& connInfo) override {
+        NimBLEAttValue val = c->getValue();
 
         // TODO: FTMS Control Point parancs dekódolása
-        // Példa: target power kinyerése
         int targetPower = 0;
 
-        // Meghívjuk a központi vezérlő logikát
         handleControlFromClient(targetPower);
     }
 };
@@ -67,49 +67,35 @@ bool blePeripheralInit() {
     NimBLEDevice::init(BRIDGE_DEVICE_NAME);
     bleServer = NimBLEDevice::createServer();
 
-    // ───────────────────────────────────────────
     // 1. FTMS Service (Zwift)
-    // ───────────────────────────────────────────
     ftmsService = bleServer->createService("1826");
 
     ftmsDataChar = ftmsService->createCharacteristic(
-        "2AD2",  // Indoor Bike Data
+        "2AD2",
         NIMBLE_PROPERTY::NOTIFY
     );
 
     ftmsControlPointChar = ftmsService->createCharacteristic(
-        "2AD9",  // Fitness Machine Control Point
+        "2AD9",
         NIMBLE_PROPERTY::WRITE
     );
     ftmsControlPointChar->setCallbacks(new FtmsControlPointCallback());
 
-    ftmsService->start();
-
-
-    // ───────────────────────────────────────────
     // 2. CPS Service (Garmin)
-    // ───────────────────────────────────────────
     cpsService = bleServer->createService("1818");
 
     cpsPowerChar = cpsService->createCharacteristic(
-        "2A63",  // Cycling Power Measurement
+        "2A63",
         NIMBLE_PROPERTY::NOTIFY
     );
 
-    cpsService->start();
-
-
-    // ───────────────────────────────────────────
     // 3. CSC Service (Telefon)
-    // ───────────────────────────────────────────
     cscService = bleServer->createService("1816");
 
     cscMeasureChar = cscService->createCharacteristic(
-        "2A5B",  // CSC Measurement
+        "2A5B",
         NIMBLE_PROPERTY::NOTIFY
     );
-
-    cscService->start();
 
     return true;
 }
@@ -122,11 +108,10 @@ bool blePeripheralInit() {
 void blePeripheralStartAdvertising() {
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
 
-    adv->addServiceUUID("1826"); // FTMS
-    adv->addServiceUUID("1818"); // CPS
-    adv->addServiceUUID("1816"); // CSC
+    adv->addServiceUUID("1826");
+    adv->addServiceUUID("1818");
+    adv->addServiceUUID("1816");
 
-    adv->setScanResponse(true);
     adv->start();
 
     Serial.println("BLE advertising started.");
@@ -140,15 +125,12 @@ void blePeripheralStartAdvertising() {
 void blePeripheralSendFtms() {
     if (!ftmsDataChar) return;
 
-    // FTMS Indoor Bike Data frame összeállítása
-    // Ez csak váz, a valós FTMS frame bonyolultabb
     uint8_t frame[8] = {0};
 
     int power   = g_trainerData.power;
     int cadence = g_trainerData.cadence;
     float speed = g_trainerData.speed;
 
-    // Példa: egyszerűsített FTMS frame
     frame[0] = power & 0xFF;
     frame[1] = (power >> 8) & 0xFF;
     frame[2] = cadence;
@@ -167,7 +149,6 @@ void blePeripheralSendCps() {
     if (!cpsPowerChar) return;
 
     uint8_t frame[4] = {0};
-
     int power = g_trainerData.power;
 
     frame[0] = power & 0xFF;
@@ -186,10 +167,9 @@ void blePeripheralSendCsc() {
     if (!cscMeasureChar) return;
 
     uint8_t frame[4] = {0};
-
     int cadence = g_trainerData.cadence;
 
-    frame[0] = 0x02; // csak crank data flag
+    frame[0] = 0x02;
     frame[1] = cadence & 0xFF;
     frame[2] = (cadence >> 8) & 0xFF;
 
@@ -203,6 +183,5 @@ void blePeripheralSendCsc() {
 // ───────────────────────────────────────────────
 
 void handleControlFromClient(int targetPower) {
-    // Ezt a Suito FTMS Control Point felé továbbítjuk
     sendResistanceCommandToSuito(targetPower);
 }
