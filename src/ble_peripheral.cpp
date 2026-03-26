@@ -162,13 +162,6 @@ bool blePeripheralInit() {
     cscMeasureChar = cscService->createCharacteristic("2A5B", NIMBLE_PROPERTY::NOTIFY);
 
     // ─────────────────────────────────────────
-    // Service-ek indítása (NimBLE 2.x: kötelező advertising előtt)
-    // ─────────────────────────────────────────
-    ftmsService->start();
-    cpsService->start();
-    cscService->start();
-
-    // ─────────────────────────────────────────
     // FreeRTOS Timer
     // ─────────────────────────────────────────
     counterUpdateTimer = xTimerCreate(
