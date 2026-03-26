@@ -24,8 +24,15 @@ static bool scanRunning = false;
 
 class UnifiedScanCallback : public NimBLEScanCallbacks {
     void onResult(const NimBLEAdvertisedDevice* device) override {
+        // Debug: minden talált eszköz kiírása
+        Serial.printf("  BLE device: %s (%s) RSSI:%d svcs:%d\n",
+            device->getName().c_str(),
+            device->getAddress().toString().c_str(),
+            device->getRSSI(),
+            device->getServiceUUIDCount());
+
         // FTMS trainer (0x1826)
-        if (!ftmsFound && device->isAdvertisingService(NimBLEUUID("1826"))) {
+        if (!ftmsFound && device->isAdvertisingService(NimBLEUUID((uint16_t)0x1826))) {
             Serial.printf("FTMS trainer found: %s (%s)\n",
                 device->getName().c_str(),
                 device->getAddress().toString().c_str());
@@ -34,7 +41,7 @@ class UnifiedScanCallback : public NimBLEScanCallbacks {
         }
 
         // HRM szenzor (0x180D)
-        if (!hrmFound && device->isAdvertisingService(NimBLEUUID("180D"))) {
+        if (!hrmFound && device->isAdvertisingService(NimBLEUUID((uint16_t)0x180D))) {
             Serial.printf("HRM sensor found: %s (%s)\n",
                 device->getName().c_str(),
                 device->getAddress().toString().c_str());
@@ -43,7 +50,7 @@ class UnifiedScanCallback : public NimBLEScanCallbacks {
         }
 
         // Cadence szenzor (0x1816) — saját peripheral-t kiszűrjük
-        if (!cadenceFound && device->isAdvertisingService(NimBLEUUID("1816"))) {
+        if (!cadenceFound && device->isAdvertisingService(NimBLEUUID((uint16_t)0x1816))) {
             // Ne csatlakozzunk saját magunkhoz
             if (device->getName() != BRIDGE_DEVICE_NAME) {
                 Serial.printf("Cadence sensor found: %s (%s)\n",
