@@ -24,13 +24,6 @@ static bool scanRunning = false;
 
 class UnifiedScanCallback : public NimBLEScanCallbacks {
     void onResult(const NimBLEAdvertisedDevice* device) override {
-        // Debug: minden talált eszköz kiírása
-        Serial.printf("  BLE device: %s (%s) RSSI:%d svcs:%d\n",
-            device->getName().c_str(),
-            device->getAddress().toString().c_str(),
-            device->getRSSI(),
-            device->getServiceUUIDCount());
-
         // FTMS trainer (0x1826)
         if (!ftmsFound && device->isAdvertisingService(NimBLEUUID((uint16_t)0x1826))) {
             Serial.printf("FTMS trainer found: %s (%s)\n",
