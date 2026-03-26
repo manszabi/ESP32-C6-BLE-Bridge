@@ -1,15 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
-bool blePeripheralInit();
-void blePeripheralStartAdvertising();
-
-void blePeripheralSendFtms();
-void blePeripheralSendCps();
-void blePeripheralSendCsc();
-
-bool isFtmsClientConnected();
-bool isCpsClientConnected();
-bool isCscClientConnected();
-
+bool bleCentralInit();
+bool bleCentralConnectToSuito();
+void bleCentralLoop();
+bool bleCentralIsConnected();
 void sendResistanceCommandToSuito(int targetPower);
