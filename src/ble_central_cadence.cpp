@@ -126,8 +126,6 @@ bool bleCentralCadenceConnect() {
 
         NimBLEScan* scan = NimBLEDevice::getScan();
         scan->setScanCallbacks(&cadScanCb, false);
-        scan->setFilterByServiceUUID(true);
-        scan->setServiceUUID("1816");
         scan->setActiveScan(true);
         scan->setInterval(100);
         scan->setWindow(99);
