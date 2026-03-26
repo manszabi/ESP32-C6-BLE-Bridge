@@ -4,6 +4,7 @@
 #include "config.h"
 
 #include <NimBLEDevice.h>
+#include <freertos/timers.h>        // FreeRTOS timerhez
 
 // ───────────────────────────────────────────────
 // BLE server + service/characteristic pointerek
@@ -29,7 +30,7 @@ static NimBLECharacteristic* cscMeasureChar = nullptr;
 static NimBLECharacteristic* cscFeatureChar = nullptr;
 
 // ───────────────────────────────────────────────
-// Kumulatív számlálók (CPS és CSC-hez kellenek)
+// Kumulatív számlálók (CPS és CSC-hez)
 // ───────────────────────────────────────────────
 
 static uint16_t cumulativeCrankRevs = 0;
@@ -40,6 +41,12 @@ static uint16_t lastWheelEventTime  = 0;   // 1/1024 sec egységben
 
 static uint32_t lastCrankUpdateMs = 0;
 static uint32_t lastWheelUpdateMs = 0;
+
+// ───────────────────────────────────────────────
+// FreeRTOS Timer a counter-ek periodikus frissítéséhez
+// ───────────────────────────────────────────────
+static TimerHandle_t counterUpdateTimer = nullptr;
+static const uint32_t COUNTER_UPDATE_PERIOD_MS = 150;   // 100-200 ms ajánlott tartomány
 
 // ───────────────────────────────────────────────
 // Kliens-ellenőrzés
@@ -69,16 +76,25 @@ class FtmsControlPointCallback : public NimBLECharacteristicCallbacks {
         const uint8_t* d = val.data();
         uint8_t opcode = d[0];
 
-        // FTMS Control Point opcode-ok:
-        // 0x05 = Set Target Power (sint16, watts)
-        // 0x11 = Set Indoor Bike Simulation (wind, grade, crr, cw)
         if (opcode == 0x05 && val.size() >= 3) {
             int16_t targetPower = (int16_t)(d[1] | (d[2] << 8));
             handleControlFromClient(targetPower);
+
+            // TODO: Response Code indication küldése (0x80 opcode)
         }
-        // TODO: 0x11 simulation params kezelése
+        // TODO: 0x11 Indoor Bike Simulation Parameters kezelése
     }
 };
+
+// ───────────────────────────────────────────────
+// Timer callback – periodikus counter frissítés
+// ───────────────────────────────────────────────
+static void counterUpdateTimerCallback(TimerHandle_t xTimer) {
+    (void)xTimer;  // nem használjuk
+
+    updateCrankCounter();
+    updateWheelCounter();
+}
 
 // ───────────────────────────────────────────────
 // BLE Peripheral inicializálás
@@ -94,20 +110,16 @@ bool blePeripheralInit() {
     ftmsService = bleServer->createService("1826");
 
     // Fitness Machine Feature (0x2ACC, read)
-    // Byte layout: 4 byte Fitness Machine Features + 4 byte Target Setting Features
     ftmsFeatureChar = ftmsService->createCharacteristic(
         "2ACC",
         NIMBLE_PROPERTY::READ
     );
-    // Bit 1: Cadence Supported
-    // Bit 2: Total Distance Supported
-    // Bit 6: Power Measurement Supported
-    // Bit 14: Indoor Bike Simulation Parameters Supported (Target Settings)
+
+    // Bit 1: Cadence Supported, Bit 6: Power Measurement Supported
+    // Bit 2 (Total Distance) szándékosan kikapcsolva, mert nem küldjük
     uint8_t ftmsFeature[8] = {0};
-    ftmsFeature[0] = 0x46;  // bits 1,2,6 = cadence + distance + power
-    ftmsFeature[1] = 0x00;
-    ftmsFeature[4] = 0x00;
-    ftmsFeature[5] = 0x40;  // bit 14 = indoor bike simulation
+    ftmsFeature[0] = 0x42;  // 0b01000010 → cadence + power
+    ftmsFeature[5] = 0x40;  // Bit 14: Indoor Bike Simulation Parameters Supported
     ftmsFeatureChar->setValue(ftmsFeature, sizeof(ftmsFeature));
 
     // Indoor Bike Data (0x2AD2, notify)
@@ -128,51 +140,49 @@ bool blePeripheralInit() {
     // ─────────────────────────────────────────
     cpsService = bleServer->createService("1818");
 
-    // Cycling Power Feature (0x2A65, read)
-    cpsFeatureChar = cpsService->createCharacteristic(
-        "2A65",
-        NIMBLE_PROPERTY::READ
-    );
-    // Bit 3: Crank Revolution Data Supported
+    cpsFeatureChar = cpsService->createCharacteristic("2A65", NIMBLE_PROPERTY::READ);
     uint8_t cpsFeature[4] = {0};
-    cpsFeature[0] = 0x08;  // bit 3
+    cpsFeature[0] = 0x08;  // Bit 3: Crank Revolution Data Supported
     cpsFeatureChar->setValue(cpsFeature, sizeof(cpsFeature));
 
-    // Sensor Location (0x2A5D, read)
-    cpsSensorLocChar = cpsService->createCharacteristic(
-        "2A5D",
-        NIMBLE_PROPERTY::READ
-    );
-    uint8_t sensorLoc = 0x0D;  // "Rear Hub"
+    cpsSensorLocChar = cpsService->createCharacteristic("2A5D", NIMBLE_PROPERTY::READ);
+    uint8_t sensorLoc = 0x0D;  // Rear Hub
     cpsSensorLocChar->setValue(&sensorLoc, 1);
 
-    // Cycling Power Measurement (0x2A63, notify)
-    cpsPowerChar = cpsService->createCharacteristic(
-        "2A63",
-        NIMBLE_PROPERTY::NOTIFY
-    );
+    cpsPowerChar = cpsService->createCharacteristic("2A63", NIMBLE_PROPERTY::NOTIFY);
 
     // ─────────────────────────────────────────
     // 3. CSC Service (0x1816) — Telefon
     // ─────────────────────────────────────────
     cscService = bleServer->createService("1816");
 
-    // CSC Feature (0x2A5C, read)
-    cscFeatureChar = cscService->createCharacteristic(
-        "2A5C",
-        NIMBLE_PROPERTY::READ
-    );
-    // Bit 0: Wheel Revolution Data Supported
-    // Bit 1: Crank Revolution Data Supported
+    cscFeatureChar = cscService->createCharacteristic("2A5C", NIMBLE_PROPERTY::READ);
     uint8_t cscFeature[2] = {0};
-    cscFeature[0] = 0x03;  // bit 0 + bit 1
+    cscFeature[0] = 0x03;  // Wheel + Crank Revolution Data Supported
     cscFeatureChar->setValue(cscFeature, sizeof(cscFeature));
 
-    // CSC Measurement (0x2A5B, notify)
-    cscMeasureChar = cscService->createCharacteristic(
-        "2A5B",
-        NIMBLE_PROPERTY::NOTIFY
+    cscMeasureChar = cscService->createCharacteristic("2A5B", NIMBLE_PROPERTY::NOTIFY);
+
+    // ─────────────────────────────────────────
+    // FreeRTOS Timer a counter-ek periodikus frissítéséhez
+    // ─────────────────────────────────────────
+    counterUpdateTimer = xTimerCreate(
+        "CounterUpdateTimer",
+        pdMS_TO_TICKS(COUNTER_UPDATE_PERIOD_MS),
+        pdTRUE,                                   // auto-reload
+        nullptr,
+        counterUpdateTimerCallback
     );
+
+    if (counterUpdateTimer != nullptr) {
+        if (xTimerStart(counterUpdateTimer, 0) == pdPASS) {
+            Serial.printf("Counter update timer started (every %d ms)\n", COUNTER_UPDATE_PERIOD_MS);
+        } else {
+            Serial.println("WARNING: Failed to start counter update timer!");
+        }
+    } else {
+        Serial.println("ERROR: Failed to create counter update timer!");
+    }
 
     return true;
 }
@@ -193,50 +203,55 @@ void blePeripheralStartAdvertising() {
 }
 
 // ───────────────────────────────────────────────
-// Segédfüggvény: crank/wheel számlálók frissítése
+// Crank counter frissítése (CPS + CSC-hez)
 // ───────────────────────────────────────────────
-
 static void updateCrankCounter() {
     uint32_t now = millis();
-    int cadence = g_trainerData.cadence;
+    int16_t cadence = g_trainerData.cadence;
 
-    if (cadence > 0 && now > lastCrankUpdateMs) {
-        uint32_t elapsedMs = now - lastCrankUpdateMs;
+    if (cadence <= 0 || now <= lastCrankUpdateMs) {
+        lastCrankUpdateMs = now;
+        return;
+    }
 
-        // Hány fordulat történt az eltelt idő alatt?
-        // cadence = rpm → rev/sec = cadence/60
-        // revolutions = (cadence/60) * (elapsedMs/1000)
-        float revs = (cadence / 60.0f) * (elapsedMs / 1000.0f);
+    uint32_t elapsedMs = now - lastCrankUpdateMs;
+    float revs = (cadence / 60.0f) * (elapsedMs / 1000.0f);
 
-        if (revs >= 0.1f) {
-            cumulativeCrankRevs += (uint16_t)(revs + 0.5f);  // kerekítés
-            // Last Crank Event Time: 1/1024 sec egységben, 16 bit (overflowol ~64s-enként)
-            lastCrankEventTime += (uint16_t)((elapsedMs * 1024) / 1000);
-            lastCrankUpdateMs = now;
-        }
+    if (revs > 0.005f) {
+        cumulativeCrankRevs = (cumulativeCrankRevs + (uint16_t)(revs + 0.5f)) & 0xFFFF;
+
+        uint32_t ticks = (elapsedMs * 1024UL) / 1000UL;
+        lastCrankEventTime = (lastCrankEventTime + (uint16_t)ticks) & 0xFFFF;
+
+        lastCrankUpdateMs = now;
     } else {
         lastCrankUpdateMs = now;
     }
 }
 
+// ───────────────────────────────────────────────
+// Wheel counter frissítése (CSC-hez)
+// ───────────────────────────────────────────────
 static void updateWheelCounter() {
     uint32_t now = millis();
-    float speed = g_trainerData.speed;  // km/h
+    float speedKmh = g_trainerData.speed;
 
-    if (speed > 0.1f && now > lastWheelUpdateMs) {
-        uint32_t elapsedMs = now - lastWheelUpdateMs;
+    if (speedKmh < 0.1f || now <= lastWheelUpdateMs) {
+        lastWheelUpdateMs = now;
+        return;
+    }
 
-        // speed km/h → m/s = speed / 3.6
-        // wheel circumference = 2.105m (700x25c)
-        // revolutions = (m/s * elapsedMs/1000) / circumference
-        float distM = (speed / 3.6f) * (elapsedMs / 1000.0f);
-        float revs = distM / 2.105f;
+    uint32_t elapsedMs = now - lastWheelUpdateMs;
+    float distMeters = (speedKmh / 3.6f) * (elapsedMs / 1000.0f);
+    float revs = distMeters / WHEEL_CIRCUMFERENCE_M;
 
-        if (revs >= 0.1f) {
-            cumulativeWheelRevs += (uint32_t)(revs + 0.5f);
-            lastWheelEventTime += (uint16_t)((elapsedMs * 1024) / 1000);
-            lastWheelUpdateMs = now;
-        }
+    if (revs > 0.005f) {
+        cumulativeWheelRevs += (uint32_t)(revs + 0.5f);
+
+        uint32_t ticks = (elapsedMs * 1024UL) / 1000UL;
+        lastWheelEventTime = (lastWheelEventTime + (uint16_t)ticks) & 0xFFFF;
+
+        lastWheelUpdateMs = now;
     } else {
         lastWheelUpdateMs = now;
     }
@@ -244,36 +259,30 @@ static void updateWheelCounter() {
 
 // ───────────────────────────────────────────────
 // FTMS Indoor Bike Data notify (Zwift)
-//
-// Frame formátum (spec 4.9.1):
-// [0-1]  Flags (16 bit, little-endian)
-// [2-3]  Instantaneous Speed (uint16, 0.01 km/h) — ha bit0=0
-// [4-5]  Instantaneous Cadence (uint16, 0.5 rpm) — ha bit2=1
-// [6-7]  Instantaneous Power (sint16, watt) — ha bit6=1
 // ───────────────────────────────────────────────
-
 void blePeripheralSendFtms() {
     if (!ftmsDataChar) return;
 
     uint8_t frame[8] = {0};
     size_t offset = 0;
 
-    // Flags: bit0=0 (speed present), bit2=1 (cadence), bit6=1 (power)
-    uint16_t flags = 0x0044;  // 0b0000_0000_0100_0100
+    // Flags: bit1 (Speed) + bit2 (Cadence) + bit6 (Power)
+    uint16_t flags = 0x0046;
+
     frame[offset++] = flags & 0xFF;
     frame[offset++] = (flags >> 8) & 0xFF;
 
-    // Instantaneous Speed (bit0=0 → jelen van)
-    uint16_t rawSpeed = (uint16_t)(g_trainerData.speed * 100);  // 0.01 km/h
+    // Instantaneous Speed (0.01 km/h)
+    uint16_t rawSpeed = (uint16_t)(g_trainerData.speed * 100.0f + 0.5f);
     frame[offset++] = rawSpeed & 0xFF;
     frame[offset++] = (rawSpeed >> 8) & 0xFF;
 
-    // Instantaneous Cadence (bit2=1 → jelen van)
-    uint16_t rawCadence = (uint16_t)(g_trainerData.cadence * 2);  // 0.5 rpm
+    // Instantaneous Cadence (0.5 rpm)
+    uint16_t rawCadence = (uint16_t)(g_trainerData.cadence * 2.0f + 0.5f);
     frame[offset++] = rawCadence & 0xFF;
     frame[offset++] = (rawCadence >> 8) & 0xFF;
 
-    // Instantaneous Power (bit6=1 → jelen van)
+    // Instantaneous Power (sint16)
     int16_t rawPower = (int16_t)g_trainerData.power;
     frame[offset++] = rawPower & 0xFF;
     frame[offset++] = (rawPower >> 8) & 0xFF;
@@ -284,37 +293,27 @@ void blePeripheralSendFtms() {
 
 // ───────────────────────────────────────────────
 // CPS Cycling Power Measurement notify (Garmin)
-//
-// Frame formátum:
-// [0-1]  Flags (16 bit) — bit5=1: Crank Revolution Data present
-// [2-3]  Instantaneous Power (sint16, watt)
-// [4-5]  Cumulative Crank Revolutions (uint16)
-// [6-7]  Last Crank Event Time (uint16, 1/1024 sec)
 // ───────────────────────────────────────────────
-
 void blePeripheralSendCps() {
     if (!cpsPowerChar) return;
 
-    updateCrankCounter();
+    updateCrankCounter();        // biztosíték
 
     uint8_t frame[8] = {0};
     size_t offset = 0;
 
-    // Flags: bit5 = Crank Revolution Data present
-    uint16_t flags = 0x0020;  // 0b0000_0000_0010_0000
+    uint16_t flags = 0x0020;     // Crank Revolution Data present
+
     frame[offset++] = flags & 0xFF;
     frame[offset++] = (flags >> 8) & 0xFF;
 
-    // Instantaneous Power (always present)
     int16_t power = (int16_t)g_trainerData.power;
     frame[offset++] = power & 0xFF;
     frame[offset++] = (power >> 8) & 0xFF;
 
-    // Cumulative Crank Revolutions
     frame[offset++] = cumulativeCrankRevs & 0xFF;
     frame[offset++] = (cumulativeCrankRevs >> 8) & 0xFF;
 
-    // Last Crank Event Time
     frame[offset++] = lastCrankEventTime & 0xFF;
     frame[offset++] = (lastCrankEventTime >> 8) & 0xFF;
 
@@ -324,15 +323,7 @@ void blePeripheralSendCps() {
 
 // ───────────────────────────────────────────────
 // CSC Measurement notify (Telefon)
-//
-// Frame formátum:
-// [0]    Flags (8 bit) — bit0: Wheel data, bit1: Crank data
-// [1-4]  Cumulative Wheel Revolutions (uint32)
-// [5-6]  Last Wheel Event Time (uint16, 1/1024 sec)
-// [7-8]  Cumulative Crank Revolutions (uint16)
-// [9-10] Last Crank Event Time (uint16, 1/1024 sec)
 // ───────────────────────────────────────────────
-
 void blePeripheralSendCsc() {
     if (!cscMeasureChar) return;
 
@@ -342,8 +333,8 @@ void blePeripheralSendCsc() {
     uint8_t frame[11] = {0};
     size_t offset = 0;
 
-    // Flags: bit0 = Wheel Revolution Data, bit1 = Crank Revolution Data
-    uint8_t flags = 0x03;
+    uint8_t flags = 0x03;        // Wheel + Crank data present
+
     frame[offset++] = flags;
 
     // Cumulative Wheel Revolutions (uint32)
@@ -356,7 +347,7 @@ void blePeripheralSendCsc() {
     frame[offset++] = lastWheelEventTime & 0xFF;
     frame[offset++] = (lastWheelEventTime >> 8) & 0xFF;
 
-    // Cumulative Crank Revolutions (uint16)
+    // Cumulative Crank Revolutions
     frame[offset++] = cumulativeCrankRevs & 0xFF;
     frame[offset++] = (cumulativeCrankRevs >> 8) & 0xFF;
 

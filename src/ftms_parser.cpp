@@ -20,19 +20,19 @@
 // Bit 12: Remaining Time present
 // ================================================================
 
-#define FLAG_MORE_DATA           (1 << 0)   // invertált! 0 = speed jelen van
-#define FLAG_AVG_SPEED           (1 << 1)
-#define FLAG_INST_CADENCE        (1 << 2)
-#define FLAG_AVG_CADENCE         (1 << 3)
-#define FLAG_TOTAL_DISTANCE      (1 << 4)
-#define FLAG_RESISTANCE_LEVEL    (1 << 5)
-#define FLAG_INST_POWER          (1 << 6)
-#define FLAG_AVG_POWER           (1 << 7)
-#define FLAG_EXPENDED_ENERGY     (1 << 8)
-#define FLAG_HEART_RATE          (1 << 9)
-#define FLAG_METABOLIC_EQUIV     (1 << 10)
-#define FLAG_ELAPSED_TIME        (1 << 11)
-#define FLAG_REMAINING_TIME      (1 << 12)
+#define FLAG_MORE_DATA           (1u << 0)   // invertált! 0 = speed jelen van
+#define FLAG_AVG_SPEED           (1u << 1)
+#define FLAG_INST_CADENCE        (1u << 2)
+#define FLAG_AVG_CADENCE         (1u << 3)
+#define FLAG_TOTAL_DISTANCE      (1u << 4)
+#define FLAG_RESISTANCE_LEVEL    (1u << 5)
+#define FLAG_INST_POWER          (1u << 6)
+#define FLAG_AVG_POWER           (1u << 7)
+#define FLAG_EXPENDED_ENERGY     (1u << 8)
+#define FLAG_HEART_RATE          (1u << 9)
+#define FLAG_METABOLIC_EQUIV     (1u << 10)
+#define FLAG_ELAPSED_TIME        (1u << 11)
+#define FLAG_REMAINING_TIME      (1u << 12)
 
 // Segédfüggvények a little-endian olvasáshoz
 static inline uint16_t readU16(const uint8_t* p) {
@@ -41,10 +41,6 @@ static inline uint16_t readU16(const uint8_t* p) {
 
 static inline int16_t readS16(const uint8_t* p) {
     return (int16_t)(p[0] | (p[1] << 8));
-}
-
-static inline uint32_t readU24(const uint8_t* p) {
-    return (uint32_t)(p[0] | (p[1] << 8) | (p[2] << 16));
 }
 
 void parseFtmsIndoorBikeData(const uint8_t* data, size_t len) {
@@ -61,97 +57,82 @@ void parseFtmsIndoorBikeData(const uint8_t* data, size_t len) {
     int cadence = 0;
     int power = 0;
 
-    // 2. Instantaneous Speed (km/h, resolution 0.01)
-    //    JELEN VAN, ha bit 0 == 0 (invertált logika!)
+    // ====================== FONTOS MEZŐK (Zwift aktívan használja) ======================
+
+    // Instantaneous Speed (km/h, 0.01 felbontás)
     if (!(flags & FLAG_MORE_DATA)) {
         if (offset + 2 > len) return;
-        uint16_t rawSpeed = readU16(&data[offset]);
-        speed = rawSpeed / 100.0f;  // km/h
+        speed = readU16(&data[offset]) / 100.0f;
         offset += 2;
     }
 
-    // 3. Average Speed (km/h, resolution 0.01)
-    if (flags & FLAG_AVG_SPEED) {
-        if (offset + 2 > len) return;
-        // uint16_t avgSpeed = readU16(&data[offset]);
-        offset += 2;  // kihagyjuk, nem kell nekünk
-    }
-
-    // 4. Instantaneous Cadence (rpm, resolution 0.5)
+    // Instantaneous Cadence (rpm, 0.5 felbontás)
     if (flags & FLAG_INST_CADENCE) {
         if (offset + 2 > len) return;
-        uint16_t rawCadence = readU16(&data[offset]);
-        cadence = rawCadence / 2;  // 0.5 rpm resolution → rpm
+        cadence = readU16(&data[offset]) / 2;
         offset += 2;
     }
 
-    // 5. Average Cadence (rpm, resolution 0.5)
-    if (flags & FLAG_AVG_CADENCE) {
-        if (offset + 2 > len) return;
-        offset += 2;
-    }
-
-    // 6. Total Distance (m, 3 byte, uint24)
-    if (flags & FLAG_TOTAL_DISTANCE) {
-        if (offset + 3 > len) return;
-        // uint32_t totalDist = readU24(&data[offset]);
-        offset += 3;
-    }
-
-    // 7. Resistance Level (unitless, sint16)
-    if (flags & FLAG_RESISTANCE_LEVEL) {
-        if (offset + 2 > len) return;
-        // int16_t resistance = readS16(&data[offset]);
-        offset += 2;
-    }
-
-    // 8. Instantaneous Power (watts, sint16)
+    // Instantaneous Power (watt) - a legfontosabb mező Zwift számára
     if (flags & FLAG_INST_POWER) {
         if (offset + 2 > len) return;
         power = readS16(&data[offset]);
         offset += 2;
     }
 
-    // 9. Average Power (watts, sint16)
+    // ====================== KIHAGYOTT MEZŐK (egy csoportban) ======================
+    // Ezeket a Zwift nem igényli ehhez az adathoz, ezért egyszerűen átlépjük őket
+
+    if (flags & FLAG_AVG_SPEED) {
+        if (offset + 2 > len) return;
+        offset += 2;
+    }
+
+    if (flags & FLAG_AVG_CADENCE) {
+        if (offset + 2 > len) return;
+        offset += 2;
+    }
+
+    if (flags & FLAG_TOTAL_DISTANCE) {
+        if (offset + 3 > len) return;
+        offset += 3;
+    }
+
+    if (flags & FLAG_RESISTANCE_LEVEL) {
+        if (offset + 2 > len) return;
+        offset += 2;
+    }
+
     if (flags & FLAG_AVG_POWER) {
         if (offset + 2 > len) return;
         offset += 2;
     }
 
-    // 10. Expended Energy (3 mező: total, per hour, per minute)
     if (flags & FLAG_EXPENDED_ENERGY) {
         if (offset + 5 > len) return;
-        // uint16_t totalEnergy    = readU16(&data[offset]);
-        // uint16_t energyPerHour  = readU16(&data[offset + 2]);
-        // uint8_t  energyPerMin   = data[offset + 4];
         offset += 5;
     }
 
-    // 11. Heart Rate (uint8)
     if (flags & FLAG_HEART_RATE) {
         if (offset + 1 > len) return;
-        // uint8_t hr = data[offset];
         offset += 1;
     }
 
-    // 12. Metabolic Equivalent (resolution 0.1)
     if (flags & FLAG_METABOLIC_EQUIV) {
         if (offset + 1 > len) return;
         offset += 1;
     }
 
-    // 13. Elapsed Time (seconds, uint16)
     if (flags & FLAG_ELAPSED_TIME) {
         if (offset + 2 > len) return;
         offset += 2;
     }
 
-    // 14. Remaining Time (seconds, uint16)
     if (flags & FLAG_REMAINING_TIME) {
         if (offset + 2 > len) return;
         offset += 2;
     }
 
-    // Frissítjük a globális adatmodellt
+    // ====================== Adatok frissítése ======================
     updateTrainerFromSuito(power, cadence, speed);
 }

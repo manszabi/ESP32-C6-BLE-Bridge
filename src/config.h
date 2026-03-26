@@ -17,3 +17,5 @@ static const uint16_t NOTIFY_INTERVAL_MS     = 100;
 
 // Debug
 #define DEBUG_SERIAL 1
+
+constexpr float WHEEL_CIRCUMFERENCE_M = 2.105f;
