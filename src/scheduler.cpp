@@ -105,31 +105,42 @@ void schedulerLoop() {
             bleScanStart();
         }
 
-        // Suito reconnect
+        // Scan közben ne próbáljunk csatlakozni (ütközhet)
+        if (bleScanIsRunning()) {
+            return;
+        }
+
+        // Suito reconnect (csak ha a scanner már megtalálta)
         bool currentlyConnected = bleCentralIsConnected();
 
         if (!currentlyConnected) {
-            bleCentralConnectToSuito();
-            reconnectFailCount++;
+            if (bleCentralConnectToSuito()) {
+                // Sikeres csatlakozás
+                reconnectFailCount = 0;
+                reconnectInterval = 1500;
+                Serial.println("Suito connected successfully");
+            } else if (sr.ftmsFound) {
+                // Csak akkor számoljuk hibának, ha van cím de nem sikerült
+                reconnectFailCount++;
 
-            if (reconnectFailCount > 5) {
-                reconnectInterval = 3500;
-            } else if (reconnectFailCount > 2) {
-                reconnectInterval = 2000;
-            } else {
-                reconnectInterval = 750;
-            }
+                if (reconnectFailCount > 5) {
+                    reconnectInterval = 3500;
+                } else if (reconnectFailCount > 2) {
+                    reconnectInterval = 2000;
+                } else {
+                    reconnectInterval = 750;
+                }
 
-            if (reconnectFailCount % 3 == 0 && reconnectFailCount > 0) {
-                Serial.printf("Suito reconnect attempt #%d, interval = %d ms\n",
-                            reconnectFailCount, reconnectInterval);
+                if (reconnectFailCount % 3 == 0) {
+                    Serial.printf("Suito reconnect attempt #%d, interval = %d ms\n",
+                                reconnectFailCount, reconnectInterval);
+                }
             }
         }
         else {
             if (reconnectFailCount > 0) {
                 reconnectFailCount = 0;
                 reconnectInterval = 1500;
-                Serial.println("Suito reconnected successfully");
             }
         }
 
