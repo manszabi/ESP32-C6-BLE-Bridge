@@ -98,55 +98,55 @@ void schedulerLoop() {
     if (now - lastSuitoCheck >= reconnectInterval) {
         lastSuitoCheck = now;
 
-        // Unified scan: ha nincs meg valamelyik eszköz és nem fut scan, indítsunk
+        // Unified scan: csak ha FTMS nincs meg, vagy ha nincs kapcsolat és nincs cím
+        // HRM és CAD opcionálisak - ha a scan közben megtalálja, jó, de ne scanneljünk miattuk örökké
         ScanResults sr = bleScanGetResults();
-        bool needScan = !sr.ftmsFound || !sr.hrmFound || !sr.cadenceFound;
-        if (needScan && !bleScanIsRunning()) {
+        if (!sr.ftmsFound && !bleScanIsRunning()) {
             bleScanStart();
         }
 
-        // Scan közben ne próbáljunk csatlakozni (ütközhet)
-        if (bleScanIsRunning()) {
-            return;
-        }
-
-        // Suito reconnect (csak ha a scanner már megtalálta)
-        bool currentlyConnected = bleCentralIsConnected();
-
-        if (!currentlyConnected) {
-            if (bleCentralConnectToSuito()) {
-                // Sikeres csatlakozás
-                reconnectFailCount = 0;
-                reconnectInterval = 1500;
-                Serial.println("Suito connected successfully");
-            } else if (sr.ftmsFound) {
-                // Csak akkor számoljuk hibának, ha van cím de nem sikerült
-                reconnectFailCount++;
-
-                if (reconnectFailCount > 5) {
-                    reconnectInterval = 3500;
-                } else if (reconnectFailCount > 2) {
-                    reconnectInterval = 2000;
-                } else {
-                    reconnectInterval = 750;
+        // Csatlakozás csak ha nem fut scan (a connect blokkolhat)
+        if (!bleScanIsRunning()) {
+            // Suito reconnect
+            if (!bleCentralIsConnected()) {
+                if (bleCentralConnectToSuito()) {
+                    reconnectFailCount = 0;
+                    reconnectInterval = 1500;
+                    Serial.println("Suito connected successfully");
+                } else if (sr.ftmsFound) {
+                    reconnectFailCount++;
+                    if (reconnectFailCount > 5) {
+                        reconnectInterval = 3500;
+                    } else if (reconnectFailCount > 2) {
+                        reconnectInterval = 2000;
+                    } else {
+                        reconnectInterval = 750;
+                    }
+                    if (reconnectFailCount % 3 == 0) {
+                        Serial.printf("Suito reconnect attempt #%d, interval = %d ms\n",
+                                    reconnectFailCount, reconnectInterval);
+                    }
                 }
+            } else {
+                if (reconnectFailCount > 0) {
+                    reconnectFailCount = 0;
+                    reconnectInterval = 1500;
+                }
+            }
 
-                if (reconnectFailCount % 3 == 0) {
-                    Serial.printf("Suito reconnect attempt #%d, interval = %d ms\n",
-                                reconnectFailCount, reconnectInterval);
+            // HRM és Cadence connect (ha megtalálta a scanner)
+            if (!bleCentralHrmIsConnected())      bleCentralHrmConnect();
+            if (!bleCentralCadenceIsConnected())  bleCentralCadenceConnect();
+
+            // Ha FTMS megvan, de HRM/CAD még nem, időnként scanneljünk
+            if (sr.ftmsFound && (!sr.hrmFound || !sr.cadenceFound)) {
+                static uint32_t lastOptionalScan = 0;
+                if (now - lastOptionalScan > 30000) {  // 30 másodpercenként
+                    lastOptionalScan = now;
+                    bleScanStart();
                 }
             }
         }
-        else {
-            if (reconnectFailCount > 0) {
-                reconnectFailCount = 0;
-                reconnectInterval = 1500;
-            }
-        }
-
-        // HRM és Cadence connect (csak ha a scanner már megtalálta őket)
-        if (!bleCentralHrmIsConnected())      bleCentralHrmConnect();
-        if (!bleCentralCadenceIsConnected())  bleCentralCadenceConnect();
     }
 
     // ===================================================================
