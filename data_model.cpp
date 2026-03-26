@@ -7,7 +7,6 @@ void updateTrainerFromSuito(int power, int cadence, float speed) {
     g_trainerData.cadence_suito = cadence;
     g_trainerData.speed        = speed;
     g_trainerData.timestamp    = millis();
-    refreshDerivedFields();
 }
 
 void updateHeartRate(int hr) {
@@ -18,7 +17,6 @@ void updateHeartRate(int hr) {
 void updateExternalCadence(int cadence) {
     g_trainerData.cadence_external = cadence;
     g_trainerData.cadExtTimestamp  = millis();
-    refreshDerivedFields();
 }
 
 void refreshDerivedFields() {
