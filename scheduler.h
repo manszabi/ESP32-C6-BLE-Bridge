@@ -79,5 +79,3 @@ bool isSchedulerStale();
  * (hasznos logginghoz vagy monitorozáshoz)
  */
 uint32_t getReconnectInterval();
-
-#endif // SCHEDULER_H
