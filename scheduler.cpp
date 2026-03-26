@@ -138,15 +138,6 @@ void schedulerLoop() {
     //    1 Hz-es Suito esetén ez az optimális érték: elég sűrű, de nem spam
     // ===================================================================
     
-    /**
-    if (now - lastFtmsNotify >= 200) {
-        if (isFtmsClientConnected() && !isStale) {
-            blePeripheralSendFtms();        // már a helyesen választott cadence-dzsel
-        }
-        lastFtmsNotify = now;
-    }
-    */
-    
     if (now - lastFtmsNotify >= 200) {
         if (isFtmsClientConnected()) {        // ← stale esetén IS küld
             blePeripheralSendFtms();          // power=0, speed=0 megy ki (mert a stale védelem
