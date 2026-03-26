@@ -69,21 +69,21 @@ bool bleCentralConnectToSuito() {
 
     Serial.println("Connected, discovering FTMS services...");
 
-    NimBLERemoteService* ftmsService = suitoClient->getService("1826");
+    NimBLERemoteService* ftmsService = suitoClient->getService(NimBLEUUID((uint16_t)0x1826));
     if (!ftmsService) {
         Serial.println("FTMS service not found!");
         suitoClient->disconnect();
         return false;
     }
 
-    ftmsIndoorBikeDataChar = ftmsService->getCharacteristic("2AD2");
+    ftmsIndoorBikeDataChar = ftmsService->getCharacteristic(NimBLEUUID((uint16_t)0x2AD2));
     if (!ftmsIndoorBikeDataChar) {
         Serial.println("Indoor Bike Data characteristic not found!");
         suitoClient->disconnect();
         return false;
     }
 
-    ftmsControlPointChar = ftmsService->getCharacteristic("2AD9");
+    ftmsControlPointChar = ftmsService->getCharacteristic(NimBLEUUID((uint16_t)0x2AD9));
     if (!ftmsControlPointChar) {
         Serial.println("Control Point characteristic not found (non-fatal).");
     }

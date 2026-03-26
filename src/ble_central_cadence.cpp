@@ -119,14 +119,14 @@ bool bleCentralCadenceConnect() {
 
     Serial.println("Connected to Cadence sensor, discovering services...");
 
-    NimBLERemoteService* cscService = cadClient->getService("1816");
+    NimBLERemoteService* cscService = cadClient->getService(NimBLEUUID((uint16_t)0x1816));
     if (!cscService) {
         Serial.println("CSC service not found!");
         cadClient->disconnect();
         return false;
     }
 
-    cscMeasChar = cscService->getCharacteristic("2A5B");
+    cscMeasChar = cscService->getCharacteristic(NimBLEUUID((uint16_t)0x2A5B));
     if (!cscMeasChar) {
         Serial.println("CSC Measurement characteristic not found!");
         cadClient->disconnect();
