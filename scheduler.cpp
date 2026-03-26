@@ -70,7 +70,7 @@ void schedulerLoop() {
     }
 
     // 7. Reconnect – Suito / HRM / Cadence (2 s)
-    if (now - lastSuitoCheck >= 2000) {
+    if (now - lastSuitoCheck >= 1000) {
         lastSuitoCheck = now;
 
         if (!bleCentralIsConnected()) {
