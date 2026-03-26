@@ -7,76 +7,92 @@
 #include "config.h"
 #include <Arduino.h>
 
-// Globális változók (scheduler.h-ban is deklaráld őket)
+// ================================================
+// Globális változók
+// ================================================
 uint32_t lastFtmsNotify = 0;
 uint32_t lastCpsNotify = 0;
 uint32_t lastCscNotify = 0;
 uint32_t lastSuitoCheck = 0;
 
-// Adaptív reconnect + Suito 1Hz optimalizált változók
-static uint32_t lastSuccessfulSuitoData = 0;
-static uint32_t reconnectInterval = 1500;     // stabil állapotban 1.5 másodperc
-static uint8_t  reconnectFailCount = 0;
-static bool     isStale = false;
+// Adaptív reconnect + 1 Hz-es Suito optimalizált változók
+static uint32_t lastSuccessfulSuitoData = 0;   // utolsó időpont, amikor új adatot kaptunk a Suitótól
+static uint32_t reconnectInterval = 1500;      // aktuális reconnect ellenőrzési intervallum (ms)
+static uint8_t  reconnectFailCount = 0;        // hányszor sikertelen volt a reconnect egymás után
+static bool     isStale = false;               // jelzi, ha a Suito adatai elavultak
 
+// ================================================
+// Inicializálás
+// ================================================
 void schedulerInit() {
     uint32_t now = millis();
-    
+
+    // Minden időzítőt a jelenlegi időpontra állítunk
     lastFtmsNotify = now;
     lastCpsNotify  = now;
     lastCscNotify  = now;
     lastSuitoCheck = now;
     lastSuccessfulSuitoData = now;
 
-    reconnectInterval = 1500;
+    // Adaptív reconnect kezdeti állapot
+    reconnectInterval = 1500;      // stabil állapotban 1.5 másodpercenként ellenőrzünk
     reconnectFailCount = 0;
     isStale = false;
 
-    Serial.println("Scheduler initialized - Adaptive reconnect + 1Hz Suito + External Cadence priority");
+    Serial.println("Scheduler v2 initialized - Adaptive reconnect + 1Hz Suito optimized + External Cadence priority");
 }
 
+// ================================================
+// Fő scheduler ciklus - minden loop()-ban meghívódik
+// ================================================
 void schedulerLoop() {
     uint32_t now = millis();
 
     // ===================================================================
-    // 1. Legmagasabb prioritás: Minden central adat fogadása
+    // 1. Legmagasabb prioritás: Central oldal adatfogadása
+    //    Itt érkeznek be a nyers adatok az összes BLE eszközről
     // ===================================================================
-    bleCentralLoop();           // Suito FTMS (power, speed, cadence stb.)
-    bleCentralHrmLoop();        // HRM szenzor
-    bleCentralCadenceLoop();    // Külső cadence szenzor (ez a legfontosabb neked)
+    bleCentralLoop();           // Elite Suito FTMS (power, speed, cadence, resistance stb.)
+    bleCentralHrmLoop();        // Külső szívritmus szenzor
+    bleCentralCadenceLoop();    // Külső cadence szenzor ← ez kritikus a te setupodban
 
     // ===================================================================
-    // 2. Derived mezők frissítése – KÖZVETLENÜL az adatfogadás után!
-    //    Itt döntjük el a cadence prioritást (külső szenzor > Suito)
+    // 2. Derived mezők frissítése (nagyon fontos!)
+    //    Közvetlenül az adatfogadás után fut, hogy a legfrissebb adatok alapján döntsünk
+    //    Itt történik a cadence prioritás: Külső szenzor > Suito cadence
     // ===================================================================
-    refreshDerivedFields();     // ← Áthelyezve ide! (cadence választás + smoothing)
+    refreshDerivedFields();     // cadence választás + esetleges smoothing
 
     // ===================================================================
-    // 3. Stale védelem (1 Hz-es Suito-hoz lazábban)
+    // 3. Stale védelem
+    //    Ha túl régóta nem érkezett új adat a Suitótól, nullázzuk a kritikus értékeket,
+    //    hogy a Zwift ne kapjon elavult teljesítményadatot
     // ===================================================================
-    if (now - lastSuccessfulSuitoData > 1800) {   // 1.8 másodperc után
+    if (now - lastSuccessfulSuitoData > 1800) {        // 1.8 másodperc (1 Hz-es Suito-hoz illeszkedik)
         if (!isStale) {
             g_trainerData.power = 0;
             g_trainerData.speed = 0.0f;
             isStale = true;
-            reconnectFailCount++;
-            reconnectInterval = 750;               // gyors üzemmód
+            reconnectFailCount++;                      // növeljük a hiba számlálót
+            reconnectInterval = 750;                   // gyors üzemmódba váltunk
         }
     } else {
         isStale = false;
     }
 
     // ===================================================================
-    // 4. Új adat érkezett a Suitótól? → reseteljük a hibaszámlálót
+    // 4. Sikeres adat érkezésének detektálása
+    //    Ha új adat jött a Suitótól, visszaállítjuk a stabil állapotot
     // ===================================================================
     if (g_trainerData.timestamp > lastSuccessfulSuitoData) {
         lastSuccessfulSuitoData = g_trainerData.timestamp;
-        reconnectFailCount = 0;
-        reconnectInterval = 1500;                  // vissza stabil állapotba
+        reconnectFailCount = 0;                        // hiba számláló nullázása
+        reconnectInterval = 1500;                      // vissza stabil intervallumra
     }
 
     // ===================================================================
-    // 5. Adaptív reconnect check
+    // 5. Adaptív reconnect logika
+    //    Stabil esetben ritkábban, probléma esetén gyorsabban próbálkozik
     // ===================================================================
     if (now - lastSuitoCheck >= reconnectInterval) {
         lastSuitoCheck = now;
@@ -84,24 +100,27 @@ void schedulerLoop() {
         bool currentlyConnected = bleCentralIsConnected();
 
         if (!currentlyConnected) {
+            // Reconnect próbálkozás a Suitóhoz
             bleCentralConnectToSuito();
             reconnectFailCount++;
 
-            // Exponential backoff
+            // Exponential backoff: minél többször hibázik, annál ritkábban próbálkozik
             if (reconnectFailCount > 5) {
-                reconnectInterval = 3500;
+                reconnectInterval = 3500;      // maximum 3.5 másodperc
             } else if (reconnectFailCount > 2) {
                 reconnectInterval = 2000;
             } else {
-                reconnectInterval = 750;           // gyors próbálkozás
+                reconnectInterval = 750;       // gyors próbálkozás
             }
 
+            // Debug információ (nem túl gyakran)
             if (reconnectFailCount % 3 == 0 && reconnectFailCount > 0) {
-                Serial.printf("Suito reconnect attempt #%d, interval=%d ms\n", 
+                Serial.printf("Suito reconnect attempt #%d, interval = %d ms\n", 
                               reconnectFailCount, reconnectInterval);
             }
-        } else {
-            // Sikeres kapcsolat
+        } 
+        else {
+            // Kapcsolat rendben van
             if (reconnectFailCount > 0) {
                 reconnectFailCount = 0;
                 reconnectInterval = 1500;
@@ -109,23 +128,24 @@ void schedulerLoop() {
             }
         }
 
-        // HRM és külső cadence reconnect (egyszerű)
+        // Egyéb central eszközök reconnect-je (egyszerűbb logika)
         if (!bleCentralHrmIsConnected())      bleCentralHrmConnect();
         if (!bleCentralCadenceIsConnected())  bleCentralCadenceConnect();
     }
 
     // ===================================================================
-    // 6. FTMS notify Zwift felé (200 ms – optimális 1 Hz-es Suito esetén)
+    // 6. FTMS notify Zwift felé (200 ms intervallum)
+    //    1 Hz-es Suito esetén ez az optimális érték: elég sűrű, de nem spam
     // ===================================================================
     if (now - lastFtmsNotify >= 200) {
         if (isFtmsClientConnected() && !isStale) {
-            blePeripheralSendFtms();        // itt már a helyes (külső) cadence megy
+            blePeripheralSendFtms();        // már a helyesen választott cadence-dzsel
         }
         lastFtmsNotify = now;
     }
 
     // ===================================================================
-    // 7. CPS notify (Garmin)
+    // 7. CPS notify (Garmin óra)
     // ===================================================================
     if (now - lastCpsNotify >= 1000) {
         if (isCpsClientConnected()) {
@@ -135,23 +155,23 @@ void schedulerLoop() {
     }
 
     // ===================================================================
-    // 8. CSC notify (telefon) – külön csatorna a külső cadence-hez
+    // 8. CSC notify (telefon/app) – külön csatorna
     // ===================================================================
     if (now - lastCscNotify >= 1500) {
         if (isCscClientConnected()) {
-            blePeripheralSendCsc();         // itt is a preferált cadence megy
+            blePeripheralSendCsc();         // itt is a preferált (külső) cadence megy ki
         }
         lastCscNotify = now;
     }
+}
 
-        // ======================
-    // Segédfüggvények
-    // ======================
-    bool isSchedulerStale() {
-        return isStale;
-    }
-    
-    uint32_t getReconnectInterval() {
-        return reconnectInterval;
-    }
+// ================================================
+// Segédfüggvények (más fájlokból is hívhatók)
+// ================================================
+bool isSchedulerStale() {
+    return isStale;
+}
+
+uint32_t getReconnectInterval() {
+    return reconnectInterval;
 }
