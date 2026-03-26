@@ -142,7 +142,5 @@ void parseFtmsIndoorBikeData(const uint8_t* data, size_t len) {
     }
 
     // ====================== Adatok frissítése ======================
-    Serial.printf("FTMS: P=%dW C=%drpm S=%.1fkm/h flags=0x%04X len=%d\n",
-        power, cadence, speed, flags, len);
     updateTrainerFromSuito(power, cadence, speed);
 }
