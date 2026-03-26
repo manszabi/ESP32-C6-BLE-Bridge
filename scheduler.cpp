@@ -31,7 +31,7 @@ void schedulerLoop() {
     bleCentralCadenceLoop();   // Cadence szenzor
 
     // 2. Stale védelem – Suito adat
-    if (now - g_trainerData.timestamp > 1800) {
+    if (now - g_trainerData.timestamp > 1500) {
         if (!isStale) {
             g_trainerData.power   = 0;
             g_trainerData.speed   = 0.0f;
@@ -70,7 +70,7 @@ void schedulerLoop() {
     }
 
     // 7. Reconnect – Suito / HRM / Cadence (2 s)
-    if (now - lastSuitoCheck >= 750) {
+    if (now - lastSuitoCheck >= 1000) {
         lastSuitoCheck = now;
 
         if (!bleCentralIsConnected()) {
