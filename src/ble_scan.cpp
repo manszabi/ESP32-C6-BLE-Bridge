@@ -96,8 +96,8 @@ bool bleScanStart() {
     scan->setInterval(100);
     scan->setWindow(99);
 
-    // Nem blokkoló: utolsó paraméter = true (async)
-    if (scan->start(BLE_SCAN_DURATION_SEC, nullptr, true)) {
+    // Nem blokkoló: second param = false (not continue), third = true (async)
+    if (scan->start(BLE_SCAN_DURATION_SEC, false, true)) {
         scanRunning = true;
         Serial.println("Unified BLE scan started...");
         return true;
