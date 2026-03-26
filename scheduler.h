@@ -38,35 +38,6 @@ void schedulerInit();
 void schedulerLoop();
 
 // ======================
-// Időzítési változók (extern deklarációk)
-// ======================
-
-/**
- * Utolsó notify időpontok – a nem-blocking időzítéshez használjuk
- 
-extern uint32_t lastFtmsNotify;     // FTMS (Zwift) notify utolsó ideje
-extern uint32_t lastCpsNotify;      // CPS (Garmin) notify utolsó ideje
-extern uint32_t lastCscNotify;      // CSC (telefon) notify utolsó ideje
-extern uint32_t lastSuitoCheck;     // utolsó reconnect ellenőrzés ideje
- 
- */
-// ======================
-// Adaptív reconnect változók
-// ======================
-
-/**
- * Adaptív reconnect rendszer állapotváltozói
- * 
- * reconnectInterval:  jelenlegi ellenőrzési időköz (stabil: 1500 ms, probléma esetén gyorsabb)
- * reconnectFailCount: egymás utáni sikertelen reconnect-ek száma (backoff-hoz)
- * isStale:            true, ha a Suito adatai elavultak (power/speed nullázva)
- 
-extern uint32_t reconnectInterval;   // aktuális reconnect intervallum (ms)
-extern uint8_t  reconnectFailCount;  // hányszor sikertelen a reconnect egymás után
-extern bool     isStale;             // stale állapot jelző
-*/
-
-// ======================
 // Segédfüggvények / állapot lekérdezők
 // ======================
 
