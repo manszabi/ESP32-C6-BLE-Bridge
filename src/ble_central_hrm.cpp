@@ -93,8 +93,6 @@ bool bleCentralHrmConnect() {
 
         NimBLEScan* scan = NimBLEDevice::getScan();
         scan->setScanCallbacks(&hrmScanCb, false);
-        scan->setFilterByServiceUUID(true);
-        scan->setServiceUUID("180D");
         scan->setActiveScan(true);
         scan->setInterval(100);
         scan->setWindow(99);
