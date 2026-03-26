@@ -110,10 +110,10 @@ bool blePeripheralInit() {
     // ─────────────────────────────────────────
     // 1. FTMS Service (0x1826) — Zwift
     // ─────────────────────────────────────────
-    ftmsService = bleServer->createService("1826");
+    ftmsService = bleServer->createService(NimBLEUUID((uint16_t)0x1826));
 
     ftmsFeatureChar = ftmsService->createCharacteristic(
-        "2ACC",
+        NimBLEUUID((uint16_t)0x2ACC),
         NIMBLE_PROPERTY::READ
     );
     // Bit 1: Cadence Supported, Bit 6: Power Measurement Supported
@@ -123,12 +123,12 @@ bool blePeripheralInit() {
     ftmsFeatureChar->setValue(ftmsFeature, sizeof(ftmsFeature));
 
     ftmsDataChar = ftmsService->createCharacteristic(
-        "2AD2",
+        NimBLEUUID((uint16_t)0x2AD2),
         NIMBLE_PROPERTY::NOTIFY
     );
 
     ftmsControlPointChar = ftmsService->createCharacteristic(
-        "2AD9",
+        NimBLEUUID((uint16_t)0x2AD9),
         NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::INDICATE
     );
     ftmsControlPointChar->setCallbacks(new FtmsControlPointCallback());
@@ -136,30 +136,30 @@ bool blePeripheralInit() {
     // ─────────────────────────────────────────
     // 2. CPS Service (0x1818) — Garmin
     // ─────────────────────────────────────────
-    cpsService = bleServer->createService("1818");
+    cpsService = bleServer->createService(NimBLEUUID((uint16_t)0x1818));
 
-    cpsFeatureChar = cpsService->createCharacteristic("2A65", NIMBLE_PROPERTY::READ);
+    cpsFeatureChar = cpsService->createCharacteristic(NimBLEUUID((uint16_t)0x2A65), NIMBLE_PROPERTY::READ);
     uint8_t cpsFeature[4] = {0};
     cpsFeature[0] = 0x08;  // Bit 3: Crank Revolution Data Supported
     cpsFeatureChar->setValue(cpsFeature, sizeof(cpsFeature));
 
-    cpsSensorLocChar = cpsService->createCharacteristic("2A5D", NIMBLE_PROPERTY::READ);
+    cpsSensorLocChar = cpsService->createCharacteristic(NimBLEUUID((uint16_t)0x2A5D), NIMBLE_PROPERTY::READ);
     uint8_t sensorLoc = 0x0D;  // Rear Hub
     cpsSensorLocChar->setValue(&sensorLoc, 1);
 
-    cpsPowerChar = cpsService->createCharacteristic("2A63", NIMBLE_PROPERTY::NOTIFY);
+    cpsPowerChar = cpsService->createCharacteristic(NimBLEUUID((uint16_t)0x2A63), NIMBLE_PROPERTY::NOTIFY);
 
     // ─────────────────────────────────────────
     // 3. CSC Service (0x1816) — Telefon
     // ─────────────────────────────────────────
-    cscService = bleServer->createService("1816");
+    cscService = bleServer->createService(NimBLEUUID((uint16_t)0x1816));
 
-    cscFeatureChar = cscService->createCharacteristic("2A5C", NIMBLE_PROPERTY::READ);
+    cscFeatureChar = cscService->createCharacteristic(NimBLEUUID((uint16_t)0x2A5C), NIMBLE_PROPERTY::READ);
     uint8_t cscFeature[2] = {0};
     cscFeature[0] = 0x03;  // Wheel + Crank Revolution Data Supported
     cscFeatureChar->setValue(cscFeature, sizeof(cscFeature));
 
-    cscMeasureChar = cscService->createCharacteristic("2A5B", NIMBLE_PROPERTY::NOTIFY);
+    cscMeasureChar = cscService->createCharacteristic(NimBLEUUID((uint16_t)0x2A5B), NIMBLE_PROPERTY::NOTIFY);
 
     // ─────────────────────────────────────────
     // FreeRTOS Timer
@@ -192,9 +192,9 @@ bool blePeripheralInit() {
 void blePeripheralStartAdvertising() {
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
 
-    adv->addServiceUUID("1826");
-    adv->addServiceUUID("1818");
-    adv->addServiceUUID("1816");
+    adv->addServiceUUID(NimBLEUUID((uint16_t)0x1826));
+    adv->addServiceUUID(NimBLEUUID((uint16_t)0x1818));
+    adv->addServiceUUID(NimBLEUUID((uint16_t)0x1816));
 
     adv->start();
     Serial.println("BLE advertising started.");

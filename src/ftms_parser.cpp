@@ -57,82 +57,92 @@ void parseFtmsIndoorBikeData(const uint8_t* data, size_t len) {
     int cadence = 0;
     int power = 0;
 
-    // ====================== FONTOS MEZŐK (Zwift aktívan használja) ======================
+    // ====================== MEZŐK A SPEC SZERINTI SORRENDBEN ======================
+    // Az FTMS Indoor Bike Data mezőit a flags bitjei szerinti sorrendben kell olvasni!
 
-    // Instantaneous Speed (km/h, 0.01 felbontás)
+    // Bit 0 (invertált): Instantaneous Speed (km/h, 0.01 felbontás)
     if (!(flags & FLAG_MORE_DATA)) {
         if (offset + 2 > len) return;
         speed = readU16(&data[offset]) / 100.0f;
         offset += 2;
     }
 
-    // Instantaneous Cadence (rpm, 0.5 felbontás)
+    // Bit 1: Average Speed
+    if (flags & FLAG_AVG_SPEED) {
+        if (offset + 2 > len) return;
+        offset += 2;
+    }
+
+    // Bit 2: Instantaneous Cadence (rpm, 0.5 felbontás)
     if (flags & FLAG_INST_CADENCE) {
         if (offset + 2 > len) return;
         cadence = readU16(&data[offset]) / 2;
         offset += 2;
     }
 
-    // Instantaneous Power (watt) - a legfontosabb mező Zwift számára
+    // Bit 3: Average Cadence
+    if (flags & FLAG_AVG_CADENCE) {
+        if (offset + 2 > len) return;
+        offset += 2;
+    }
+
+    // Bit 4: Total Distance (3 byte)
+    if (flags & FLAG_TOTAL_DISTANCE) {
+        if (offset + 3 > len) return;
+        offset += 3;
+    }
+
+    // Bit 5: Resistance Level
+    if (flags & FLAG_RESISTANCE_LEVEL) {
+        if (offset + 2 > len) return;
+        offset += 2;
+    }
+
+    // Bit 6: Instantaneous Power (watt)
     if (flags & FLAG_INST_POWER) {
         if (offset + 2 > len) return;
         power = readS16(&data[offset]);
         offset += 2;
     }
 
-    // ====================== KIHAGYOTT MEZŐK (egy csoportban) ======================
-    // Ezeket a Zwift nem igényli ehhez az adathoz, ezért egyszerűen átlépjük őket
-
-    if (flags & FLAG_AVG_SPEED) {
-        if (offset + 2 > len) return;
-        offset += 2;
-    }
-
-    if (flags & FLAG_AVG_CADENCE) {
-        if (offset + 2 > len) return;
-        offset += 2;
-    }
-
-    if (flags & FLAG_TOTAL_DISTANCE) {
-        if (offset + 3 > len) return;
-        offset += 3;
-    }
-
-    if (flags & FLAG_RESISTANCE_LEVEL) {
-        if (offset + 2 > len) return;
-        offset += 2;
-    }
-
+    // Bit 7: Average Power
     if (flags & FLAG_AVG_POWER) {
         if (offset + 2 > len) return;
         offset += 2;
     }
 
+    // Bit 8: Expended Energy (5 byte: total + per hour + per min)
     if (flags & FLAG_EXPENDED_ENERGY) {
         if (offset + 5 > len) return;
         offset += 5;
     }
 
+    // Bit 9: Heart Rate
     if (flags & FLAG_HEART_RATE) {
         if (offset + 1 > len) return;
         offset += 1;
     }
 
+    // Bit 10: Metabolic Equivalent
     if (flags & FLAG_METABOLIC_EQUIV) {
         if (offset + 1 > len) return;
         offset += 1;
     }
 
+    // Bit 11: Elapsed Time
     if (flags & FLAG_ELAPSED_TIME) {
         if (offset + 2 > len) return;
         offset += 2;
     }
 
+    // Bit 12: Remaining Time
     if (flags & FLAG_REMAINING_TIME) {
         if (offset + 2 > len) return;
         offset += 2;
     }
 
     // ====================== Adatok frissítése ======================
+    Serial.printf("FTMS: P=%dW C=%drpm S=%.1fkm/h flags=0x%04X len=%d\n",
+        power, cadence, speed, flags, len);
     updateTrainerFromSuito(power, cadence, speed);
 }

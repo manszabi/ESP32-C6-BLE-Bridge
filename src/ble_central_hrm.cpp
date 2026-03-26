@@ -89,7 +89,7 @@ bool bleCentralHrmConnect() {
     Serial.println("Connected to HRM, discovering services...");
 
     // Heart Rate Service (0x180D)
-    NimBLERemoteService* hrmService = hrmClient->getService("180D");
+    NimBLERemoteService* hrmService = hrmClient->getService(NimBLEUUID((uint16_t)0x180D));
     if (!hrmService) {
         Serial.println("Heart Rate service not found!");
         hrmClient->disconnect();
@@ -97,7 +97,7 @@ bool bleCentralHrmConnect() {
     }
 
     // Heart Rate Measurement (0x2A37)
-    hrmMeasChar = hrmService->getCharacteristic("2A37");
+    hrmMeasChar = hrmService->getCharacteristic(NimBLEUUID((uint16_t)0x2A37));
     if (!hrmMeasChar) {
         Serial.println("Heart Rate Measurement characteristic not found!");
         hrmClient->disconnect();

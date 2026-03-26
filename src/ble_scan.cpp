@@ -64,6 +64,9 @@ class UnifiedScanCallback : public NimBLEScanCallbacks {
         scanRunning = false;
         Serial.printf("Scan complete. Found: FTMS=%d HRM=%d CAD=%d\n",
             ftmsFound, hrmFound, cadenceFound);
+
+        // Advertising újraindítása scan után (a scan leállíthatja)
+        NimBLEDevice::getAdvertising()->start();
     }
 };
 
