@@ -16,7 +16,7 @@ static const uint16_t NOTIFY_INTERVAL_MS     = 100;
 static const float WHEEL_CIRCUMFERENCE_M = 2.105f;  // 700x25c
 
 // Scan timeout
-static const uint32_t BLE_SCAN_DURATION_SEC = 5;
+static const uint32_t BLE_SCAN_DURATION_SEC = 10;
 
 // Debug
 #define DEBUG_SERIAL 1

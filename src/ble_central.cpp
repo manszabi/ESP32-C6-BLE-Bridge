@@ -138,6 +138,19 @@ class ScanCallback : public NimBLEScanCallbacks {
             ftmsFound = true;
             NimBLEDevice::getScan()->stop();
         }
+#if DEBUG_SERIAL
+        else {
+            // Debug: milyen eszközöket látunk scan közben
+            static uint32_t lastDevLog = 0;
+            if (millis() - lastDevLog > 2000) {
+                lastDevLog = millis();
+                Serial.printf("[SCAN] Device: %s (%s) RSSI:%d\n",
+                    device->getName().c_str(),
+                    device->getAddress().toString().c_str(),
+                    device->getRSSI());
+            }
+        }
+#endif
     }
 
     void onScanEnd(const NimBLEScanResults& results, int reason) override {
@@ -145,6 +158,7 @@ class ScanCallback : public NimBLEScanCallbacks {
 #if DEBUG_SERIAL
         Serial.printf("[SCAN] Complete. FTMS found: %d\n", ftmsFound);
 #endif
+        // Advertising újraindítása scan után
         NimBLEDevice::getAdvertising()->start();
     }
 };
@@ -155,18 +169,24 @@ bool bleScanStart() {
     if (scanRunning) return false;
     if (ftmsFound) return false;
 
+    // Advertising leállítása scan idejére — egyetlen rádió van,
+    // az advertising elveszi a scan időt
+    NimBLEDevice::getAdvertising()->stop();
+
     NimBLEScan* scan = NimBLEDevice::getScan();
     scan->setScanCallbacks(&scanCb, false);
     scan->setActiveScan(true);
     scan->setInterval(100);
     scan->setWindow(99);
-    scan->setDuplicateFilter(true);
+    scan->setDuplicateFilter(false);  // ne szűrjön, a Suito FTMS UUID-ja scan response-ban jöhet
 
     if (scan->start(BLE_SCAN_DURATION_SEC, false, true)) {
         scanRunning = true;
         return true;
     }
 
+    // Ha nem indult el, advertising vissza
+    NimBLEDevice::getAdvertising()->start();
     return false;
 }
 
