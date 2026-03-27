@@ -6,8 +6,8 @@ Ez a projekt egy ESP32‑C6 alapú BLE‑bridge, amely lehetővé teszi, hogy az
 A bridge célja:
 
 - Zwift / TrainerRoad → teljes FTMS vezérlés  
-- Garmin óra → Cycling Power Service (CPS)  
-- Telefon / app → Cycling Speed & Cadence (CSC)  
+- Garmin óra / Telefon / app → Cycling Power Service (CPS)  
+- Garmin óra / Telefon / app → Cycling Speed & Cadence (CSC)  
 - Stabil, időzített BLE kapcsolatkezelés  
 - Reconnect‑logika és stale‑data védelem  
 
@@ -25,7 +25,7 @@ Ez azt jelenti, hogy ha Zwift csatlakozik, akkor:
 Az ESP32‑C6 bridge ezt oldja meg:
 
 - a Suitótól érkező adatokat **több BLE szolgáltatásként** hirdeti  
-- a Zwift továbbra is vezérelheti a görgőt  
+- a Zwift továbbra is vezérelheti a görgőt FTMS kapcsolaton keresztül  
 - a többi eszköz read‑only adatot kap  
 
 ---
@@ -59,13 +59,13 @@ Az ESP32‑C6 bridge ezt oldja meg:
 │                                                               │
 │  3. BLE Peripheral (több szolgáltatás)                         │
 │     - FTMS Server → Zwift                                      │
-│     - CPS Server  → Garmin óra                                 │
-│     - CSC Server  → Telefon / app                              │
+│     - CPS Server  → Garmin óra / Telefon app                                 │
+│     - CSC Server  → Garmin óra / Telefon app                             │
 │                                                               │
 │  4. Scheduler (prioritásos időzítés)                           │
-│     - Suito ↔ Zwift: 50 ms                                     │
-│     - Garmin CPS: 300 ms                                       │
-│     - Telefon CSC: 300 ms                                      │
+│     - Suito ↔ Zwift: 200 ms                                     │
+│     - CPS: 1000 ms                                       │
+│     - CSC: 1000 ms                                      │
 │                                                               │
 │  5. Control Logic                                               │
 │     - Csak 1 master vezérelhet (Zwift)                         │
@@ -73,17 +73,17 @@ Az ESP32‑C6 bridge ezt oldja meg:
 │                                                               │
 │  6. Reconnect + Stale Data                                      │
 │     - Suito reconnect loop                                      │
-│     - 500 ms után: power/cadence/speed = 0                     │
+│     - 1800 ms után: power/cadence/speed = 0                     │
 └───────────────┬──────────────────────────────────────────────┘
 │ Több BLE kapcsolat (peripheral szerep)
 ▼
-┌────────────────────────┬────────────────────────┬────────────────────────┐
-│        Zwift           │       Garmin óra       │        Telefon         │
-│   (FTMS Master app)    │   (CPS kliens)         │   (CSC kliens / app)   │
-│                        │                        │                        │
-│  - FTMS Service        │  - Power Measurement   │  - Speed/Cadence       │
-│  - vezérli az ERG‑et   │  - csak adat           │  - csak adat           │
-└────────────────────────┴────────────────────────┴────────────────────────┘
+┌────────────────────────┬──────────────────────────┬──────────────────────────┐
+│        Zwift           │    Garmin/Telefon/app    │    Garmin/Telefon/app    │
+│   (FTMS Master app)    │   (CPS kliens)           │   (CSC kliens / app)     │
+│                        │                          │                          │
+│  - FTMS Service        │  - Power Measurement     │  - Speed/Cadence         │
+│  - vezérli az ERG‑et   │  - csak adat             │  - csak adat             │
+└────────────────────────┴──────────────────────────┴──────────────────────────┘
 
 ---
 
@@ -93,8 +93,8 @@ Cadence (CSC) ─┘
 
 ESP32‑C6 (Peripheral):
   ├─ FTMS → Zwift
-  ├─ CPS  → Garmin
-  └─ CSC  → Telefon
+  ├─ CPS  → Garmin / Telefon / App
+  └─ CSC  → Garmin / Telefon / App
 
 ---
 
@@ -111,9 +111,9 @@ A BLE időosztásos működésű, ezért a bridge explicit schedulert használ:
 | Kapcsolat | Prioritás | Frissítés |
 |----------|-----------|-----------|
 | Suito → ESP32 (FTMS) | ⭐⭐⭐⭐⭐ | minden ciklus |
-| ESP32 → Zwift (FTMS) | ⭐⭐⭐⭐ | 50 ms |
-| ESP32 → Garmin (CPS) | ⭐⭐ | 300 ms |
-| ESP32 → Telefon (CSC) | ⭐⭐ | 300 ms |
+| ESP32 → Zwift (FTMS) | ⭐⭐⭐⭐ | 200 ms |
+| ESP32 → Garmin (CPS) | ⭐⭐ | 1000 ms |
+| ESP32 → Telefon (CSC) | ⭐⭐ | 1000 ms |
 
 Ez biztosítja, hogy:
 
@@ -128,8 +128,8 @@ Ez biztosítja, hogy:
 A Suito kapcsolat megszakadhat.  
 A bridge ezt így kezeli:
 
-- reconnect loop 1–2 másodpercenként  
-- ha 500 ms‑nál régebbi adat érkezett →  
+- reconnect loop 750ms-1000ms másodpercenként  
+- ha 1800 ms‑nál régebbi adat érkezett →  
   - power = 0  
   - cadence = 0  
   - speed = 0  
@@ -161,7 +161,4 @@ esp32c6_ble_bridge/
 
 - FTMS adatfeldolgozás implementálása  
 - CPS / CSC encoder megírása  
-- Scheduler és reconnect‑logika hozzáadása  
-
-A projekt már most készen áll a további fejlesztésre.
-
+- Scheduler és reconnect‑logika hozzáadása 
