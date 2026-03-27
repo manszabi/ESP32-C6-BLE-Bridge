@@ -32,15 +32,16 @@ Az ESP32‑C6 bridge ezt oldja meg:
 
 ## 🧱 Részletes blokkdiagram – BLE‑only, ESP32‑C6 bridge‑el
 
-┌───────────────────────────────────────────────────────────────┐
+```
+┌──────────────────────────────────────────────────────────────┐
 │                         Elite Suito                          │
 │                      (Smart trainer, BLE)                    │
-│                                                               │
-│  • BLE FTMS Service (0x1826)                                  │
-│     - Indoor Bike Data (notify)                               │
-│     - Fitness Machine Control Point (write)                   │
-│                                                               │
-│  → Kimenet: Power, Cadence, Speed, Resistance control         │
+│                                                              │
+│  • BLE FTMS Service (0x1826)                                 │
+│     - Indoor Bike Data (notify)                              │
+│     - Fitness Machine Control Point (write)                  │
+│                                                              │
+│  → Kimenet: Power, Cadence, Speed, Resistance control        │
 └───────────────┬──────────────────────────────────────────────┘
 │ 1× BLE FTMS kapcsolat (Suito → ESP32‑C6)
 ▼
@@ -84,7 +85,7 @@ Az ESP32‑C6 bridge ezt oldja meg:
 │  - FTMS Service        │  - Power Measurement     │  - Speed/Cadence         │
 │  - vezérli az ERG‑et   │  - csak adat             │  - csak adat             │
 └────────────────────────┴──────────────────────────┴──────────────────────────┘
-
+```
 ---
 
 Suito (FTMS) ─┐
