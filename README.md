@@ -1113,8 +1113,8 @@ Kód
 │   ├── control_logic.cpp
 │   ├── control_logic.h
 │   │
-│   └── scheduler.cpp
-│       scheduler.h
+│   ├── scheduler.cpp
+│   └── scheduler.h
 │
 ├── platformio.ini   (ha PlatformIO-t használsz)
 └── README.md

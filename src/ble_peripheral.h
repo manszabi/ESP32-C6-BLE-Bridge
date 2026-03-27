@@ -1,6 +1,9 @@
 #pragma once
 #include <Arduino.h>
 
+// BLE Peripheral modul
+// FTMS, CPS, CSC service-ek hirdetése kliensek felé
+
 bool blePeripheralInit();
 void blePeripheralStartAdvertising();
 
@@ -11,5 +14,3 @@ void blePeripheralSendCsc();
 bool isFtmsClientConnected();
 bool isCpsClientConnected();
 bool isCscClientConnected();
-
-void handleControlFromClient(int targetPower);
