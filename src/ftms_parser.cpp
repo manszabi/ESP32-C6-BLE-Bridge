@@ -1,5 +1,6 @@
 #include "ftms_parser.h"
 #include "data_model.h"
+#include "config.h"
 
 // ================================================================
 // FTMS Indoor Bike Data Flags (Section 4.9.1)
@@ -135,4 +136,14 @@ void parseFtmsIndoorBikeData(const uint8_t* data, size_t len) {
     }
 
     updateTrainerFromSuito(power, cadence, speed);
+
+#if DEBUG_SERIAL
+    static uint32_t lastRxLog = 0;
+    uint32_t now = millis();
+    if (now - lastRxLog >= LOG_RATE_LIMIT_MS) {
+        lastRxLog = now;
+        Serial.printf("[RX SUITO] power=%dW cadence=%drpm speed=%.1fkm/h\n",
+                      power, cadence, speed);
+    }
+#endif
 }

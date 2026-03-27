@@ -12,6 +12,7 @@ static uint32_t lastFtmsNotify = 0;
 static uint32_t lastCpsNotify = 0;
 static uint32_t lastCscNotify = 0;
 static uint32_t lastSuitoCheck = 0;
+static uint32_t lastTxLog = 0;
 
 // Adaptív reconnect
 static uint32_t lastSuccessfulSuitoData = 0;
@@ -54,6 +55,9 @@ void schedulerLoop() {
             isStale = true;
             reconnectFailCount++;
             reconnectInterval = 750;
+#if DEBUG_SERIAL
+            Serial.println("[STALE] Suito data timeout, values zeroed");
+#endif
         }
     } else {
         isStale = false;
@@ -126,4 +130,23 @@ void schedulerLoop() {
         }
         lastCscNotify = now;
     }
+
+    // 7. Periodikus TX log (rate limited)
+#if DEBUG_SERIAL
+    if (now - lastTxLog >= LOG_RATE_LIMIT_MS) {
+        lastTxLog = now;
+        bool ftms = isFtmsClientConnected();
+        bool cps  = isCpsClientConnected();
+        bool csc  = isCscClientConnected();
+        if (ftms || cps || csc) {
+            Serial.printf("[TX] power=%dW cad=%drpm spd=%.1fkm/h -> %s%s%s\n",
+                          g_trainerData.power,
+                          g_trainerData.cadence,
+                          g_trainerData.speed,
+                          ftms ? "FTMS " : "",
+                          cps  ? "CPS "  : "",
+                          csc  ? "CSC"   : "");
+        }
+    }
+#endif
 }
