@@ -85,7 +85,7 @@ Az ESP32‑C6 bridge ezt oldja meg:
 │  - FTMS Service        │  - Power Measurement     │  - Speed/Cadence         │
 │  - vezérli az ERG‑et   │  - csak adat             │  - csak adat             │
 └────────────────────────┴──────────────────────────┴──────────────────────────┘
-```
+
 ---
 
 Suito (FTMS) ─┐
@@ -98,6 +98,8 @@ ESP32‑C6 (Peripheral):
   └─ CSC  → Garmin / Telefon / App
 
 ---
+
+```
 
 Suito → FTMS notify → parser → TrainerData → scheduler → notify → Zwift/Garmin/Telefon
 HRM → HRS notify → TrainerData
