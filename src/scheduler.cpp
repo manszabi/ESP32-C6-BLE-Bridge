@@ -15,15 +15,15 @@ static uint32_t lastReconnectCheck = 0;
 static uint32_t lastTxLog = 0;
 static uint32_t lastScanAttempt = 0;
 
-// Adaptív reconnect
+// Reconnect / stale
 static uint32_t lastSuccessfulSuitoData = 0;
-static uint32_t reconnectInterval = 1500;
 static uint8_t  reconnectFailCount = 0;
 static uint8_t  scanFailCount = 0;
 static bool     isStale = false;
 static bool     everConnected = false;
 
-static const uint32_t SCAN_COOLDOWN_MS = 5000;  // 5s — iparági standard
+static const uint32_t SCAN_COOLDOWN_MS      = 5000;  // 5s scan-ek között
+static const uint32_t RECONNECT_INTERVAL_MS = 5000;  // 5s reconnect-ek között
 
 // ════════════════════════════════════════════════
 // Inicializálás
@@ -37,7 +37,6 @@ void schedulerInit() {
     lastReconnectCheck = now;
     lastSuccessfulSuitoData = now;
 
-    reconnectInterval = 1500;
     reconnectFailCount = 0;
     scanFailCount = 0;
     isStale = false;
@@ -65,8 +64,7 @@ void schedulerLoop() {
             Serial.println("[SCHED] Too many disconnects, rescanning...");
 #endif
         }
-        reconnectInterval = 1500;
-        lastReconnectCheck = now - reconnectInterval;  // azonnali retry
+        lastReconnectCheck = now - RECONNECT_INTERVAL_MS;  // azonnali retry
     }
 
     // 2. Stale védelem — csak ha már volt valaha kapcsolat
@@ -88,7 +86,6 @@ void schedulerLoop() {
     if (g_trainerData.timestamp > lastSuccessfulSuitoData) {
         lastSuccessfulSuitoData = g_trainerData.timestamp;
         reconnectFailCount = 0;
-        reconnectInterval = 1500;
         everConnected = true;
     }
 
@@ -106,7 +103,7 @@ void schedulerLoop() {
     }
 
     // 5. Reconnect logika — csak ha van cím és nem fut scan
-    if (now - lastReconnectCheck >= reconnectInterval) {
+    if (now - lastReconnectCheck >= RECONNECT_INTERVAL_MS) {
         lastReconnectCheck = now;
 
         if (!bleScanIsRunning() && bleScanFtmsFound()) {
@@ -114,35 +111,21 @@ void schedulerLoop() {
                 if (bleCentralConnectToSuito()) {
                     reconnectFailCount = 0;
                     scanFailCount = 0;
-                    reconnectInterval = 1500;
                     everConnected = true;
                     Serial.println("[CONN] Suito connected successfully");
                 } else {
                     reconnectFailCount++;
-                    if (reconnectFailCount > 5) {
-                        reconnectInterval = 5000;
-                    } else if (reconnectFailCount > 2) {
-                        reconnectInterval = 3000;
-                    } else {
-                        reconnectInterval = 1500;
-                    }
 #if DEBUG_SERIAL
-                    Serial.printf("[CONN] Reconnect failed #%d, next in %dms\n",
-                                reconnectFailCount, reconnectInterval);
+                    Serial.printf("[CONN] Reconnect failed #%d\n", reconnectFailCount);
 #endif
                     // Ha sokszor nem sikerül, lehet elavult a cím
-                    if (reconnectFailCount >= 8) {
+                    if (reconnectFailCount >= 5) {
                         bleScanReset();
                         reconnectFailCount = 0;
 #if DEBUG_SERIAL
                         Serial.println("[SCHED] Address may be stale, rescanning...");
 #endif
                     }
-                }
-            } else {
-                if (reconnectFailCount > 0) {
-                    reconnectFailCount = 0;
-                    reconnectInterval = 1500;
                 }
             }
         }
