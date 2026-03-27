@@ -2,6 +2,7 @@
 **BLE‑only többkapcsolatos híd Zwift, Garmin és mobilappok számára**
 
 Ez a projekt egy ESP32‑C6 alapú BLE‑bridge, amely lehetővé teszi, hogy az **Elite Suito** okosgörgő adatai több BLE‑eszköz felé is továbbításra kerüljenek, miközben a Suito továbbra is csak **egyetlen BLE FTMS kapcsolatot** engedélyez.
+A projectben a https://github.com/h2zero/NimBLE-Arduino/tree/master - NimBLE-Arduino -ót használjuk
 
 A bridge célja:
 
@@ -25,7 +26,7 @@ Ez azt jelenti, hogy ha Zwift csatlakozik, akkor:
 Az ESP32‑C6 bridge ezt oldja meg:
 
 - a Suitótól érkező adatokat **több BLE szolgáltatásként** hirdeti  
-- a Zwift továbbra is vezérelheti a görgőt FTMS kapcsolaton keresztül  
+- a Zwift továbbra is vezérelheti a görgőt FTMS kapcsolaton keresztül 
 - a többi eszköz read‑only adatot kap  
 
 ---
@@ -99,14 +100,6 @@ ESP32‑C6 (Peripheral):
 
 ---
 
-```
-
-Suito → FTMS notify → parser → TrainerData → scheduler → notify → Zwift/Garmin/Telefon
-HRM → HRS notify → TrainerData
-Cadence sensor → CSC notify → TrainerData
-
----
-
 ## 📡 Kapcsolatkezelés és időzítés
 
 A BLE időosztásos működésű, ezért a bridge explicit schedulert használ:
@@ -128,11 +121,8 @@ Ez biztosítja, hogy:
 
 ## 🔄 Reconnect és Stale Data
 
-A Suito kapcsolat megszakadhat.  
-A bridge ezt így kezeli:
-
-- reconnect loop 750ms-1000ms másodpercenként  
-- ha 1800 ms‑nál régebbi adat érkezett →  
+A Suito kapcsolat megszakadhat. Ezt kezeli a program reconnect-el.
+ Ha 1500 ms‑nál régebbi adat érkezett →  
   - power = 0  
   - cadence = 0  
   - speed = 0  
