@@ -20,3 +20,4 @@ static const uint32_t BLE_SCAN_DURATION_SEC = 5;
 
 // Debug
 #define DEBUG_SERIAL 1
+static const uint32_t LOG_RATE_LIMIT_MS = 1000;  // 1/s rate limit a debug logokra
