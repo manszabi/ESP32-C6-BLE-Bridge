@@ -140,6 +140,8 @@ A bridge ezt így kezeli:
 
 Ez megakadályozza, hogy a Garmin vagy a telefon „beragadjon” egy régi értéken.
 
+```
+
 ---
 
 🧱 Arduino projektstruktúra (ESP32‑C6 BLE Bridge)
@@ -177,3 +179,4 @@ Kód
 ├── platformio.ini   (ha PlatformIO-t használsz)
 └── README.md
 
+```
