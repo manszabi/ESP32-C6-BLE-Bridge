@@ -12,7 +12,26 @@ static NimBLEClient* suitoClient = nullptr;
 static NimBLERemoteCharacteristic* ftmsIndoorBikeDataChar = nullptr;
 static NimBLERemoteCharacteristic* ftmsControlPointChar   = nullptr;
 
-static NimBLEAddress* foundFtmsAddress = nullptr;
+static NimBLEAddress foundFtmsAddress;
+static bool hasFoundAddress = false;
+static volatile bool disconnectedFlag = false;
+
+// ───────────────────────────────────────────────
+// Client callbacks — onDisconnect azonnali észlelése
+// ───────────────────────────────────────────────
+
+class SuitoClientCallbacks : public NimBLEClientCallbacks {
+    void onDisconnect(NimBLEClient* client, int reason) override {
+        disconnectedFlag = true;
+        ftmsIndoorBikeDataChar = nullptr;
+        ftmsControlPointChar = nullptr;
+#if DEBUG_SERIAL
+        Serial.printf("[CONN] Suito disconnected (reason: %d)\n", reason);
+#endif
+    }
+};
+
+static SuitoClientCallbacks suitoClientCb;
 
 static void onFtmsNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t len, bool isNotify) {
     parseFtmsIndoorBikeData(data, len);
@@ -23,50 +42,52 @@ bool bleCentralConnectToSuito() {
         return true;
     }
 
-    if (!foundFtmsAddress) {
+    if (!hasFoundAddress) {
         return false;
     }
 
     if (!suitoClient) {
         suitoClient = NimBLEDevice::createClient();
         if (!suitoClient) {
-            Serial.println("Failed to create BLE client for Suito!");
+            Serial.println("[CONN] Failed to create BLE client!");
             return false;
         }
+        suitoClient->setClientCallbacks(&suitoClientCb, false);
     }
 
-    Serial.println("Connecting to FTMS trainer...");
-    if (!suitoClient->connect(*foundFtmsAddress)) {
-        Serial.println("Failed to connect to FTMS trainer!");
+    Serial.println("[CONN] Connecting to FTMS trainer...");
+    if (!suitoClient->connect(foundFtmsAddress)) {
+        Serial.println("[CONN] Failed to connect to FTMS trainer!");
         return false;
     }
 
-    Serial.println("Connected, discovering FTMS services...");
+    Serial.println("[CONN] Connected, discovering FTMS services...");
+    disconnectedFlag = false;
 
     NimBLERemoteService* ftmsService = suitoClient->getService(NimBLEUUID((uint16_t)0x1826));
     if (!ftmsService) {
-        Serial.println("FTMS service not found!");
+        Serial.println("[CONN] FTMS service not found!");
         suitoClient->disconnect();
         return false;
     }
 
     ftmsIndoorBikeDataChar = ftmsService->getCharacteristic(NimBLEUUID((uint16_t)0x2AD2));
     if (!ftmsIndoorBikeDataChar) {
-        Serial.println("Indoor Bike Data characteristic not found!");
+        Serial.println("[CONN] Indoor Bike Data characteristic not found!");
         suitoClient->disconnect();
         return false;
     }
 
     ftmsControlPointChar = ftmsService->getCharacteristic(NimBLEUUID((uint16_t)0x2AD9));
     if (!ftmsControlPointChar) {
-        Serial.println("Control Point characteristic not found (non-fatal).");
+        Serial.println("[CONN] Control Point not found (non-fatal).");
     }
 
     if (ftmsIndoorBikeDataChar->canNotify()) {
         ftmsIndoorBikeDataChar->subscribe(true, onFtmsNotify);
-        Serial.println("Subscribed to Indoor Bike Data notifications.");
+        Serial.println("[CONN] Subscribed to Indoor Bike Data.");
     } else {
-        Serial.println("Indoor Bike Data characteristic cannot notify!");
+        Serial.println("[CONN] Indoor Bike Data cannot notify!");
         suitoClient->disconnect();
         return false;
     }
@@ -76,6 +97,14 @@ bool bleCentralConnectToSuito() {
 
 bool bleCentralIsConnected() {
     return suitoClient && suitoClient->isConnected();
+}
+
+bool bleCentralWasDisconnected() {
+    if (disconnectedFlag) {
+        disconnectedFlag = false;
+        return true;
+    }
+    return false;
 }
 
 void sendResistanceCommandToSuito(int targetPower) {
@@ -92,7 +121,7 @@ void sendResistanceCommandToSuito(int targetPower) {
 }
 
 // ═══════════════════════════════════════════════
-// BLE Scanner — csak FTMS trainer keresése
+// BLE Scanner — FTMS trainer keresése
 // ═══════════════════════════════════════════════
 
 static bool ftmsFound = false;
@@ -101,10 +130,11 @@ static bool scanRunning = false;
 class ScanCallback : public NimBLEScanCallbacks {
     void onResult(const NimBLEAdvertisedDevice* device) override {
         if (!ftmsFound && device->isAdvertisingService(NimBLEUUID((uint16_t)0x1826))) {
-            Serial.printf("FTMS trainer found: %s (%s)\n",
+            Serial.printf("[SCAN] FTMS trainer found: %s (%s)\n",
                 device->getName().c_str(),
                 device->getAddress().toString().c_str());
-            foundFtmsAddress = new NimBLEAddress(device->getAddress());
+            foundFtmsAddress = device->getAddress();
+            hasFoundAddress = true;
             ftmsFound = true;
             NimBLEDevice::getScan()->stop();
         }
@@ -112,7 +142,9 @@ class ScanCallback : public NimBLEScanCallbacks {
 
     void onScanEnd(const NimBLEScanResults& results, int reason) override {
         scanRunning = false;
-        Serial.printf("Scan complete. FTMS found: %d\n", ftmsFound);
+#if DEBUG_SERIAL
+        Serial.printf("[SCAN] Complete. FTMS found: %d\n", ftmsFound);
+#endif
         NimBLEDevice::getAdvertising()->start();
     }
 };
@@ -128,10 +160,10 @@ bool bleScanStart() {
     scan->setActiveScan(true);
     scan->setInterval(100);
     scan->setWindow(99);
+    scan->setDuplicateFilter(true);
 
     if (scan->start(BLE_SCAN_DURATION_SEC, false, true)) {
         scanRunning = true;
-        Serial.println("BLE scan started...");
         return true;
     }
 
@@ -146,6 +178,14 @@ bool bleScanFtmsFound() {
     return ftmsFound;
 }
 
+void bleScanReset() {
+    ftmsFound = false;
+    hasFoundAddress = false;
+#if DEBUG_SERIAL
+    Serial.println("[SCAN] Reset — will search for trainer again");
+#endif
+}
+
 // ═══════════════════════════════════════════════
 // Init
 // ═══════════════════════════════════════════════
@@ -153,9 +193,12 @@ bool bleScanFtmsFound() {
 bool bleCentralInit() {
     NimBLEDevice::init(BRIDGE_DEVICE_NAME);
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+    NimBLEDevice::setScanDuplicateCacheSize(20);
 
     ftmsFound = false;
+    hasFoundAddress = false;
     scanRunning = false;
+    disconnectedFlag = false;
 
     return true;
 }

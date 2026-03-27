@@ -11,7 +11,7 @@
 static uint32_t lastFtmsNotify = 0;
 static uint32_t lastCpsNotify = 0;
 static uint32_t lastCscNotify = 0;
-static uint32_t lastSuitoCheck = 0;
+static uint32_t lastReconnectCheck = 0;
 static uint32_t lastTxLog = 0;
 static uint32_t lastScanAttempt = 0;
 
@@ -23,7 +23,7 @@ static uint8_t  scanFailCount = 0;
 static bool     isStale = false;
 static bool     everConnected = false;
 
-static const uint32_t SCAN_COOLDOWN_MS = 10000;  // 10s szünet scan-ek között
+static const uint32_t SCAN_COOLDOWN_MS = 5000;  // 5s — iparági standard
 
 // ════════════════════════════════════════════════
 // Inicializálás
@@ -34,7 +34,7 @@ void schedulerInit() {
     lastFtmsNotify = now;
     lastCpsNotify  = now;
     lastCscNotify  = now;
-    lastSuitoCheck = now;
+    lastReconnectCheck = now;
     lastSuccessfulSuitoData = now;
 
     reconnectInterval = 1500;
@@ -54,7 +54,22 @@ void schedulerInit() {
 void schedulerLoop() {
     uint32_t now = millis();
 
-    // 1. Stale védelem — csak ha már volt valaha kapcsolat
+    // 1. onDisconnect esemény kezelése — azonnali rescan
+    if (bleCentralWasDisconnected()) {
+        // Ha többször egymás után disconnect, lehet hogy a cím elavult
+        reconnectFailCount++;
+        if (reconnectFailCount > 3) {
+            bleScanReset();
+            reconnectFailCount = 0;
+#if DEBUG_SERIAL
+            Serial.println("[SCHED] Too many disconnects, rescanning...");
+#endif
+        }
+        reconnectInterval = 1500;
+        lastReconnectCheck = now - reconnectInterval;  // azonnali retry
+    }
+
+    // 2. Stale védelem — csak ha már volt valaha kapcsolat
     if (everConnected && now - lastSuccessfulSuitoData > 1800) {
         if (!isStale) {
             g_trainerData.power = 0;
@@ -69,7 +84,7 @@ void schedulerLoop() {
         isStale = false;
     }
 
-    // 2. Sikeres adat érkezésének detektálása
+    // 3. Sikeres adat érkezésének detektálása
     if (g_trainerData.timestamp > lastSuccessfulSuitoData) {
         lastSuccessfulSuitoData = g_trainerData.timestamp;
         reconnectFailCount = 0;
@@ -77,15 +92,12 @@ void schedulerLoop() {
         everConnected = true;
     }
 
-    // 3. Scan logika — cooldown-nal, ne spammeljen
+    // 4. Scan logika — 5s cooldown
     if (!bleScanFtmsFound() && !bleScanIsRunning()) {
-        uint32_t scanCooldown = SCAN_COOLDOWN_MS;
-        if (scanFailCount > 5) scanCooldown = 30000;   // 30s ha sokszor nem találta
-
-        if (now - lastScanAttempt >= scanCooldown) {
+        if (now - lastScanAttempt >= SCAN_COOLDOWN_MS) {
             lastScanAttempt = now;
+            scanFailCount++;
             if (bleScanStart()) {
-                scanFailCount++;
 #if DEBUG_SERIAL
                 Serial.printf("[SCAN] Searching for FTMS trainer... (attempt #%d)\n", scanFailCount);
 #endif
@@ -93,9 +105,9 @@ void schedulerLoop() {
         }
     }
 
-    // 4. Reconnect logika — csak ha van cím és nem fut scan
-    if (now - lastSuitoCheck >= reconnectInterval) {
-        lastSuitoCheck = now;
+    // 5. Reconnect logika — csak ha van cím és nem fut scan
+    if (now - lastReconnectCheck >= reconnectInterval) {
+        lastReconnectCheck = now;
 
         if (!bleScanIsRunning() && bleScanFtmsFound()) {
             if (!bleCentralIsConnected()) {
@@ -115,9 +127,17 @@ void schedulerLoop() {
                         reconnectInterval = 1500;
                     }
 #if DEBUG_SERIAL
-                    Serial.printf("[CONN] Suito reconnect failed #%d, next in %dms\n",
+                    Serial.printf("[CONN] Reconnect failed #%d, next in %dms\n",
                                 reconnectFailCount, reconnectInterval);
 #endif
+                    // Ha sokszor nem sikerül, lehet elavult a cím
+                    if (reconnectFailCount >= 8) {
+                        bleScanReset();
+                        reconnectFailCount = 0;
+#if DEBUG_SERIAL
+                        Serial.println("[SCHED] Address may be stale, rescanning...");
+#endif
+                    }
                 }
             } else {
                 if (reconnectFailCount > 0) {
@@ -128,7 +148,7 @@ void schedulerLoop() {
         }
     }
 
-    // 4. FTMS notify Zwift felé (200 ms)
+    // 6. FTMS notify Zwift felé (200 ms)
     if (now - lastFtmsNotify >= 200) {
         if (isFtmsClientConnected()) {
             blePeripheralSendFtms();
@@ -136,7 +156,7 @@ void schedulerLoop() {
         lastFtmsNotify = now;
     }
 
-    // 5. CPS notify — Garmin (1000 ms)
+    // 7. CPS notify — Garmin (1000 ms)
     if (now - lastCpsNotify >= 1000) {
         if (isCpsClientConnected()) {
             blePeripheralSendCps();
@@ -144,7 +164,7 @@ void schedulerLoop() {
         lastCpsNotify = now;
     }
 
-    // 6. CSC notify — Telefon/app (1000 ms)
+    // 8. CSC notify — Telefon/app (1000 ms)
     if (now - lastCscNotify >= 1000) {
         if (isCscClientConnected()) {
             blePeripheralSendCsc();
@@ -152,7 +172,7 @@ void schedulerLoop() {
         lastCscNotify = now;
     }
 
-    // 7. Periodikus TX log (rate limited)
+    // 9. Periodikus TX log (rate limited)
 #if DEBUG_SERIAL
     if (now - lastTxLog >= LOG_RATE_LIMIT_MS) {
         lastTxLog = now;
