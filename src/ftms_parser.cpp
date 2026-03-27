@@ -20,7 +20,7 @@
 // Bit 12: Remaining Time present
 // ================================================================
 
-#define FLAG_MORE_DATA           (1u << 0)   // invertált! 0 = speed jelen van
+#define FLAG_MORE_DATA           (1u << 0)
 #define FLAG_AVG_SPEED           (1u << 1)
 #define FLAG_INST_CADENCE        (1u << 2)
 #define FLAG_AVG_CADENCE         (1u << 3)
@@ -34,7 +34,6 @@
 #define FLAG_ELAPSED_TIME        (1u << 11)
 #define FLAG_REMAINING_TIME      (1u << 12)
 
-// Segédfüggvények a little-endian olvasáshoz
 static inline uint16_t readU16(const uint8_t* p) {
     return (uint16_t)(p[0] | (p[1] << 8));
 }
@@ -44,21 +43,15 @@ static inline int16_t readS16(const uint8_t* p) {
 }
 
 void parseFtmsIndoorBikeData(const uint8_t* data, size_t len) {
-    if (len < 2) return;  // minimum: flags mező
+    if (len < 2) return;
 
     size_t offset = 0;
-
-    // 1. Flags (2 byte, little-endian)
     uint16_t flags = readU16(&data[offset]);
     offset += 2;
 
-    // Változók az adatoknak
     float speed = 0.0f;
     int cadence = 0;
     int power = 0;
-
-    // ====================== MEZŐK A SPEC SZERINTI SORRENDBEN ======================
-    // Az FTMS Indoor Bike Data mezőit a flags bitjei szerinti sorrendben kell olvasni!
 
     // Bit 0 (invertált): Instantaneous Speed (km/h, 0.01 felbontás)
     if (!(flags & FLAG_MORE_DATA)) {
@@ -111,7 +104,7 @@ void parseFtmsIndoorBikeData(const uint8_t* data, size_t len) {
         offset += 2;
     }
 
-    // Bit 8: Expended Energy (5 byte: total + per hour + per min)
+    // Bit 8: Expended Energy (5 byte)
     if (flags & FLAG_EXPENDED_ENERGY) {
         if (offset + 5 > len) return;
         offset += 5;
@@ -141,6 +134,5 @@ void parseFtmsIndoorBikeData(const uint8_t* data, size_t len) {
         offset += 2;
     }
 
-    // ====================== Adatok frissítése ======================
     updateTrainerFromSuito(power, cadence, speed);
 }

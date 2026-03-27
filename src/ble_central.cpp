@@ -1,58 +1,32 @@
 #include "ble_central.h"
 #include "config.h"
 #include "ftms_parser.h"
-#include "ble_scan.h"
 
 #include <NimBLEDevice.h>
 
-// ───────────────────────────────────────────────
-// Suito Central modul
-// Service: 0x1826 (FTMS)
-// Characteristics:
-//   0x2AD2 - Indoor Bike Data (notify)
-//   0x2AD9 - FTMS Control Point (write)
-// ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════
+// Suito Central (FTMS)
+// ═══════════════════════════════════════════════
 
 static NimBLEClient* suitoClient = nullptr;
 static NimBLERemoteCharacteristic* ftmsIndoorBikeDataChar = nullptr;
 static NimBLERemoteCharacteristic* ftmsControlPointChar   = nullptr;
 
-// Cím a unified scannerből
-extern NimBLEAddress* foundFtmsAddress;
-
-// ───────────────────────────────────────────────
-// Indoor Bike Data notify callback
-// ───────────────────────────────────────────────
+static NimBLEAddress* foundFtmsAddress = nullptr;
 
 static void onFtmsNotify(NimBLERemoteCharacteristic* c, uint8_t* data, size_t len, bool isNotify) {
     parseFtmsIndoorBikeData(data, len);
 }
-
-// ───────────────────────────────────────────────
-// Init
-// ───────────────────────────────────────────────
-
-bool bleCentralInit() {
-    NimBLEDevice::init(BRIDGE_DEVICE_NAME);
-    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
-    return true;
-}
-
-// ───────────────────────────────────────────────
-// Connect — unified scanner-ből kapott címmel
-// ───────────────────────────────────────────────
 
 bool bleCentralConnectToSuito() {
     if (suitoClient && suitoClient->isConnected()) {
         return true;
     }
 
-    // Várjuk meg, amíg a unified scanner megtalálja
     if (!foundFtmsAddress) {
         return false;
     }
 
-    // Klienst csak egyszer hozzuk létre
     if (!suitoClient) {
         suitoClient = NimBLEDevice::createClient();
         if (!suitoClient) {
@@ -100,24 +74,9 @@ bool bleCentralConnectToSuito() {
     return true;
 }
 
-// ───────────────────────────────────────────────
-// Loop — callback-alapú
-// ───────────────────────────────────────────────
-
-void bleCentralLoop() {
-}
-
-// ───────────────────────────────────────────────
-// Állapot lekérdezés
-// ───────────────────────────────────────────────
-
 bool bleCentralIsConnected() {
     return suitoClient && suitoClient->isConnected();
 }
-
-// ───────────────────────────────────────────────
-// Zwift → ESP32 → Suito vezérlés
-// ───────────────────────────────────────────────
 
 void sendResistanceCommandToSuito(int targetPower) {
     if (!ftmsControlPointChar || !suitoClient || !suitoClient->isConnected()) {
@@ -130,4 +89,73 @@ void sendResistanceCommandToSuito(int targetPower) {
     frame[2] = (targetPower >> 8) & 0xFF;
 
     ftmsControlPointChar->writeValue(frame, sizeof(frame), true);
+}
+
+// ═══════════════════════════════════════════════
+// BLE Scanner — csak FTMS trainer keresése
+// ═══════════════════════════════════════════════
+
+static bool ftmsFound = false;
+static bool scanRunning = false;
+
+class ScanCallback : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* device) override {
+        if (!ftmsFound && device->isAdvertisingService(NimBLEUUID((uint16_t)0x1826))) {
+            Serial.printf("FTMS trainer found: %s (%s)\n",
+                device->getName().c_str(),
+                device->getAddress().toString().c_str());
+            foundFtmsAddress = new NimBLEAddress(device->getAddress());
+            ftmsFound = true;
+            NimBLEDevice::getScan()->stop();
+        }
+    }
+
+    void onScanEnd(const NimBLEScanResults& results, int reason) override {
+        scanRunning = false;
+        Serial.printf("Scan complete. FTMS found: %d\n", ftmsFound);
+        NimBLEDevice::getAdvertising()->start();
+    }
+};
+
+static ScanCallback scanCb;
+
+bool bleScanStart() {
+    if (scanRunning) return false;
+    if (ftmsFound) return false;
+
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    scan->setScanCallbacks(&scanCb, false);
+    scan->setActiveScan(true);
+    scan->setInterval(100);
+    scan->setWindow(99);
+
+    if (scan->start(BLE_SCAN_DURATION_SEC, false, true)) {
+        scanRunning = true;
+        Serial.println("BLE scan started...");
+        return true;
+    }
+
+    return false;
+}
+
+bool bleScanIsRunning() {
+    return scanRunning;
+}
+
+bool bleScanFtmsFound() {
+    return ftmsFound;
+}
+
+// ═══════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════
+
+bool bleCentralInit() {
+    NimBLEDevice::init(BRIDGE_DEVICE_NAME);
+    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+
+    ftmsFound = false;
+    scanRunning = false;
+
+    return true;
 }
